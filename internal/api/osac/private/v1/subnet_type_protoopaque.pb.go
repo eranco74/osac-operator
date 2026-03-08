@@ -17,7 +17,7 @@
 // 	protoc        (unknown)
 // source: osac/private/v1/subnet_type.proto
 
-//go:build !protoopaque
+//go:build protoopaque
 
 package privatev1
 
@@ -136,21 +136,13 @@ func (x SubnetState) Number() protoreflect.EnumNumber {
 // CIDR blocks must be non-overlapping within the same VirtualNetwork. Each Subnet's CIDR must be a subset of the
 // parent VirtualNetwork's CIDR. Validation is enforced at the service layer.
 type Subnet struct {
-	state protoimpl.MessageState `protogen:"hybrid.v1"`
-	// Unique identifier of the subnet.
-	Id string `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
-	// Metadata of the subnet, including name, labels, tenants, and timestamps.
-	//
-	// The parent VirtualNetwork relationship should be specified via metadata.annotations using the
-	// 'osac.io/owner-reference' key with the VirtualNetwork ID as the value. This establishes resource
-	// hierarchy for garbage collection.
-	Metadata *Metadata `protobuf:"bytes,2,opt,name=metadata,proto3" json:"metadata,omitempty"`
-	// Desired configuration of the subnet (user-modifiable).
-	Spec *SubnetSpec `protobuf:"bytes,3,opt,name=spec,proto3" json:"spec,omitempty"`
-	// Current state of the subnet (system-provided, read-only).
-	Status        *SubnetStatus `protobuf:"bytes,4,opt,name=status,proto3" json:"status,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	state               protoimpl.MessageState `protogen:"opaque.v1"`
+	xxx_hidden_Id       string                 `protobuf:"bytes,1,opt,name=id,proto3"`
+	xxx_hidden_Metadata *Metadata              `protobuf:"bytes,2,opt,name=metadata,proto3"`
+	xxx_hidden_Spec     *SubnetSpec            `protobuf:"bytes,3,opt,name=spec,proto3"`
+	xxx_hidden_Status   *SubnetStatus          `protobuf:"bytes,4,opt,name=status,proto3"`
+	unknownFields       protoimpl.UnknownFields
+	sizeCache           protoimpl.SizeCache
 }
 
 func (x *Subnet) Reset() {
@@ -180,79 +172,79 @@ func (x *Subnet) ProtoReflect() protoreflect.Message {
 
 func (x *Subnet) GetId() string {
 	if x != nil {
-		return x.Id
+		return x.xxx_hidden_Id
 	}
 	return ""
 }
 
 func (x *Subnet) GetMetadata() *Metadata {
 	if x != nil {
-		return x.Metadata
+		return x.xxx_hidden_Metadata
 	}
 	return nil
 }
 
 func (x *Subnet) GetSpec() *SubnetSpec {
 	if x != nil {
-		return x.Spec
+		return x.xxx_hidden_Spec
 	}
 	return nil
 }
 
 func (x *Subnet) GetStatus() *SubnetStatus {
 	if x != nil {
-		return x.Status
+		return x.xxx_hidden_Status
 	}
 	return nil
 }
 
 func (x *Subnet) SetId(v string) {
-	x.Id = v
+	x.xxx_hidden_Id = v
 }
 
 func (x *Subnet) SetMetadata(v *Metadata) {
-	x.Metadata = v
+	x.xxx_hidden_Metadata = v
 }
 
 func (x *Subnet) SetSpec(v *SubnetSpec) {
-	x.Spec = v
+	x.xxx_hidden_Spec = v
 }
 
 func (x *Subnet) SetStatus(v *SubnetStatus) {
-	x.Status = v
+	x.xxx_hidden_Status = v
 }
 
 func (x *Subnet) HasMetadata() bool {
 	if x == nil {
 		return false
 	}
-	return x.Metadata != nil
+	return x.xxx_hidden_Metadata != nil
 }
 
 func (x *Subnet) HasSpec() bool {
 	if x == nil {
 		return false
 	}
-	return x.Spec != nil
+	return x.xxx_hidden_Spec != nil
 }
 
 func (x *Subnet) HasStatus() bool {
 	if x == nil {
 		return false
 	}
-	return x.Status != nil
+	return x.xxx_hidden_Status != nil
 }
 
 func (x *Subnet) ClearMetadata() {
-	x.Metadata = nil
+	x.xxx_hidden_Metadata = nil
 }
 
 func (x *Subnet) ClearSpec() {
-	x.Spec = nil
+	x.xxx_hidden_Spec = nil
 }
 
 func (x *Subnet) ClearStatus() {
-	x.Status = nil
+	x.xxx_hidden_Status = nil
 }
 
 type Subnet_builder struct {
@@ -276,10 +268,10 @@ func (b0 Subnet_builder) Build() *Subnet {
 	m0 := &Subnet{}
 	b, x := &b0, m0
 	_, _ = b, x
-	x.Id = b.Id
-	x.Metadata = b.Metadata
-	x.Spec = b.Spec
-	x.Status = b.Status
+	x.xxx_hidden_Id = b.Id
+	x.xxx_hidden_Metadata = b.Metadata
+	x.xxx_hidden_Spec = b.Spec
+	x.xxx_hidden_Status = b.Status
 	return m0
 }
 
@@ -288,40 +280,14 @@ func (b0 Subnet_builder) Build() *Subnet {
 // The spec contains user-specified parameters that define how the subnet should be configured. These fields
 // follow a declarative model where users specify the desired state and the system reconciles to match it.
 type SubnetSpec struct {
-	state protoimpl.MessageState `protogen:"hybrid.v1"`
-	// Parent VirtualNetwork ID. Required and immutable after creation.
-	//
-	// Must reference the ID of an existing VirtualNetwork in READY state. This field is required and immutable
-	// after creation. The referenced VirtualNetwork must be in the same region as this Subnet.
-	//
-	// The system validates that:
-	// - The VirtualNetwork exists
-	// - The VirtualNetwork.status.state is READY
-	// - The Subnet's CIDR blocks are subsets of the VirtualNetwork's CIDR blocks
-	// - The Subnet's CIDR blocks do not overlap with other Subnets in the same VirtualNetwork
-	//
-	// Example: "vnet-abc123"
-	VirtualNetwork string `protobuf:"bytes,1,opt,name=virtual_network,json=virtualNetwork,proto3" json:"virtual_network,omitempty"`
-	// IPv4 CIDR block for this subnet. Optional for IPv6-only subnets.
-	//
-	// Must be valid CIDR notation and a subset of the parent VirtualNetwork.spec.ipv4_cidr. Validation enforced
-	// at service layer. The CIDR block must not overlap with other Subnets within the same VirtualNetwork.
-	//
-	// Example: "10.0.1.0/24", "192.168.100.0/24"
-	//
-	// Leave empty for IPv6-only subnets.
-	Ipv4Cidr *string `protobuf:"bytes,2,opt,name=ipv4_cidr,json=ipv4Cidr,proto3,oneof" json:"ipv4_cidr,omitempty"`
-	// IPv6 CIDR block for this subnet. Optional for IPv4-only subnets.
-	//
-	// Must be valid CIDR notation and a subset of the parent VirtualNetwork.spec.ipv6_cidr. Validation enforced
-	// at service layer. The CIDR block must not overlap with other Subnets within the same VirtualNetwork.
-	//
-	// Example: "2001:db8::/64", "fd00:1234::/64"
-	//
-	// Leave empty for IPv4-only subnets.
-	Ipv6Cidr      *string `protobuf:"bytes,3,opt,name=ipv6_cidr,json=ipv6Cidr,proto3,oneof" json:"ipv6_cidr,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	state                     protoimpl.MessageState `protogen:"opaque.v1"`
+	xxx_hidden_VirtualNetwork string                 `protobuf:"bytes,1,opt,name=virtual_network,json=virtualNetwork,proto3"`
+	xxx_hidden_Ipv4Cidr       *string                `protobuf:"bytes,2,opt,name=ipv4_cidr,json=ipv4Cidr,proto3,oneof"`
+	xxx_hidden_Ipv6Cidr       *string                `protobuf:"bytes,3,opt,name=ipv6_cidr,json=ipv6Cidr,proto3,oneof"`
+	XXX_raceDetectHookData    protoimpl.RaceDetectHookData
+	XXX_presence              [1]uint32
+	unknownFields             protoimpl.UnknownFields
+	sizeCache                 protoimpl.SizeCache
 }
 
 func (x *SubnetSpec) Reset() {
@@ -351,57 +317,67 @@ func (x *SubnetSpec) ProtoReflect() protoreflect.Message {
 
 func (x *SubnetSpec) GetVirtualNetwork() string {
 	if x != nil {
-		return x.VirtualNetwork
+		return x.xxx_hidden_VirtualNetwork
 	}
 	return ""
 }
 
 func (x *SubnetSpec) GetIpv4Cidr() string {
-	if x != nil && x.Ipv4Cidr != nil {
-		return *x.Ipv4Cidr
+	if x != nil {
+		if x.xxx_hidden_Ipv4Cidr != nil {
+			return *x.xxx_hidden_Ipv4Cidr
+		}
+		return ""
 	}
 	return ""
 }
 
 func (x *SubnetSpec) GetIpv6Cidr() string {
-	if x != nil && x.Ipv6Cidr != nil {
-		return *x.Ipv6Cidr
+	if x != nil {
+		if x.xxx_hidden_Ipv6Cidr != nil {
+			return *x.xxx_hidden_Ipv6Cidr
+		}
+		return ""
 	}
 	return ""
 }
 
 func (x *SubnetSpec) SetVirtualNetwork(v string) {
-	x.VirtualNetwork = v
+	x.xxx_hidden_VirtualNetwork = v
 }
 
 func (x *SubnetSpec) SetIpv4Cidr(v string) {
-	x.Ipv4Cidr = &v
+	x.xxx_hidden_Ipv4Cidr = &v
+	protoimpl.X.SetPresent(&(x.XXX_presence[0]), 1, 3)
 }
 
 func (x *SubnetSpec) SetIpv6Cidr(v string) {
-	x.Ipv6Cidr = &v
+	x.xxx_hidden_Ipv6Cidr = &v
+	protoimpl.X.SetPresent(&(x.XXX_presence[0]), 2, 3)
 }
 
 func (x *SubnetSpec) HasIpv4Cidr() bool {
 	if x == nil {
 		return false
 	}
-	return x.Ipv4Cidr != nil
+	return protoimpl.X.Present(&(x.XXX_presence[0]), 1)
 }
 
 func (x *SubnetSpec) HasIpv6Cidr() bool {
 	if x == nil {
 		return false
 	}
-	return x.Ipv6Cidr != nil
+	return protoimpl.X.Present(&(x.XXX_presence[0]), 2)
 }
 
 func (x *SubnetSpec) ClearIpv4Cidr() {
-	x.Ipv4Cidr = nil
+	protoimpl.X.ClearPresent(&(x.XXX_presence[0]), 1)
+	x.xxx_hidden_Ipv4Cidr = nil
 }
 
 func (x *SubnetSpec) ClearIpv6Cidr() {
-	x.Ipv6Cidr = nil
+	protoimpl.X.ClearPresent(&(x.XXX_presence[0]), 2)
+	x.xxx_hidden_Ipv6Cidr = nil
 }
 
 type SubnetSpec_builder struct {
@@ -444,9 +420,15 @@ func (b0 SubnetSpec_builder) Build() *SubnetSpec {
 	m0 := &SubnetSpec{}
 	b, x := &b0, m0
 	_, _ = b, x
-	x.VirtualNetwork = b.VirtualNetwork
-	x.Ipv4Cidr = b.Ipv4Cidr
-	x.Ipv6Cidr = b.Ipv6Cidr
+	x.xxx_hidden_VirtualNetwork = b.VirtualNetwork
+	if b.Ipv4Cidr != nil {
+		protoimpl.X.SetPresentNonAtomic(&(x.XXX_presence[0]), 1, 3)
+		x.xxx_hidden_Ipv4Cidr = b.Ipv4Cidr
+	}
+	if b.Ipv6Cidr != nil {
+		protoimpl.X.SetPresentNonAtomic(&(x.XXX_presence[0]), 2, 3)
+		x.xxx_hidden_Ipv6Cidr = b.Ipv6Cidr
+	}
 	return m0
 }
 
@@ -455,30 +437,14 @@ func (b0 SubnetSpec_builder) Build() *SubnetSpec {
 // Status is system-provided and read-only. Users cannot modify status fields directly; the system updates them
 // based on the reconciliation of the spec.
 type SubnetStatus struct {
-	state protoimpl.MessageState `protogen:"hybrid.v1"`
-	// Current lifecycle state of the subnet.
-	State SubnetState `protobuf:"varint,1,opt,name=state,proto3,enum=osac.private.v1.SubnetState" json:"state,omitempty"`
-	// Human-readable message providing additional details about the current state.
-	//
-	// For PENDING state, this might contain progress information like "Validating CIDR blocks" or
-	// "Configuring subnet routing".
-	//
-	// For FAILED state, contains error details like:
-	// - "CIDR overlaps with existing subnet"
-	// - "Parent VirtualNetwork not found"
-	// - "CIDR is not a subset of parent VirtualNetwork CIDR"
-	// - "Invalid CIDR notation"
-	// - "Parent VirtualNetwork not in READY state"
-	//
-	// For READY state, this is typically empty or contains confirmation like "Subnet ready for compute instances".
-	Message *string `protobuf:"bytes,2,opt,name=message,proto3,oneof" json:"message,omitempty"`
-	// Identifier of the hub that was selected for this subnet.
-	//
-	// The fulfillment-service controller randomly selects a hub from available hubs and stores the hub ID here.
-	// This tracks which hub cluster the Subnet CR is deployed to for reconciliation and cleanup.
-	Hub           string `protobuf:"bytes,3,opt,name=hub,proto3" json:"hub,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	state                  protoimpl.MessageState `protogen:"opaque.v1"`
+	xxx_hidden_State       SubnetState            `protobuf:"varint,1,opt,name=state,proto3,enum=osac.private.v1.SubnetState"`
+	xxx_hidden_Message     *string                `protobuf:"bytes,2,opt,name=message,proto3,oneof"`
+	xxx_hidden_Hub         string                 `protobuf:"bytes,3,opt,name=hub,proto3"`
+	XXX_raceDetectHookData protoimpl.RaceDetectHookData
+	XXX_presence           [1]uint32
+	unknownFields          protoimpl.UnknownFields
+	sizeCache              protoimpl.SizeCache
 }
 
 func (x *SubnetStatus) Reset() {
@@ -508,46 +474,51 @@ func (x *SubnetStatus) ProtoReflect() protoreflect.Message {
 
 func (x *SubnetStatus) GetState() SubnetState {
 	if x != nil {
-		return x.State
+		return x.xxx_hidden_State
 	}
 	return SubnetState_SUBNET_STATE_UNSPECIFIED
 }
 
 func (x *SubnetStatus) GetMessage() string {
-	if x != nil && x.Message != nil {
-		return *x.Message
+	if x != nil {
+		if x.xxx_hidden_Message != nil {
+			return *x.xxx_hidden_Message
+		}
+		return ""
 	}
 	return ""
 }
 
 func (x *SubnetStatus) GetHub() string {
 	if x != nil {
-		return x.Hub
+		return x.xxx_hidden_Hub
 	}
 	return ""
 }
 
 func (x *SubnetStatus) SetState(v SubnetState) {
-	x.State = v
+	x.xxx_hidden_State = v
 }
 
 func (x *SubnetStatus) SetMessage(v string) {
-	x.Message = &v
+	x.xxx_hidden_Message = &v
+	protoimpl.X.SetPresent(&(x.XXX_presence[0]), 1, 3)
 }
 
 func (x *SubnetStatus) SetHub(v string) {
-	x.Hub = v
+	x.xxx_hidden_Hub = v
 }
 
 func (x *SubnetStatus) HasMessage() bool {
 	if x == nil {
 		return false
 	}
-	return x.Message != nil
+	return protoimpl.X.Present(&(x.XXX_presence[0]), 1)
 }
 
 func (x *SubnetStatus) ClearMessage() {
-	x.Message = nil
+	protoimpl.X.ClearPresent(&(x.XXX_presence[0]), 1)
+	x.xxx_hidden_Message = nil
 }
 
 type SubnetStatus_builder struct {
@@ -580,9 +551,12 @@ func (b0 SubnetStatus_builder) Build() *SubnetStatus {
 	m0 := &SubnetStatus{}
 	b, x := &b0, m0
 	_, _ = b, x
-	x.State = b.State
-	x.Message = b.Message
-	x.Hub = b.Hub
+	x.xxx_hidden_State = b.State
+	if b.Message != nil {
+		protoimpl.X.SetPresentNonAtomic(&(x.XXX_presence[0]), 1, 3)
+		x.xxx_hidden_Message = b.Message
+	}
+	x.xxx_hidden_Hub = b.Hub
 	return m0
 }
 

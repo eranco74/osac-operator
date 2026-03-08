@@ -15,7 +15,7 @@
 // versions:
 // - protoc-gen-go-grpc v1.5.1
 // - protoc             (unknown)
-// source: private/v1/subnets_service.proto
+// source: osac/private/v1/subnets_service.proto
 
 package privatev1
 
@@ -32,12 +32,12 @@ import (
 const _ = grpc.SupportPackageIsVersion9
 
 const (
-	Subnets_List_FullMethodName   = "/private.v1.Subnets/List"
-	Subnets_Get_FullMethodName    = "/private.v1.Subnets/Get"
-	Subnets_Create_FullMethodName = "/private.v1.Subnets/Create"
-	Subnets_Update_FullMethodName = "/private.v1.Subnets/Update"
-	Subnets_Delete_FullMethodName = "/private.v1.Subnets/Delete"
-	Subnets_Signal_FullMethodName = "/private.v1.Subnets/Signal"
+	Subnets_List_FullMethodName   = "/osac.private.v1.Subnets/List"
+	Subnets_Get_FullMethodName    = "/osac.private.v1.Subnets/Get"
+	Subnets_Create_FullMethodName = "/osac.private.v1.Subnets/Create"
+	Subnets_Update_FullMethodName = "/osac.private.v1.Subnets/Update"
+	Subnets_Delete_FullMethodName = "/osac.private.v1.Subnets/Delete"
+	Subnets_Signal_FullMethodName = "/osac.private.v1.Subnets/Signal"
 )
 
 // SubnetsClient is the client API for Subnets service.
@@ -303,7 +303,7 @@ func _Subnets_Signal_Handler(srv interface{}, ctx context.Context, dec func(inte
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
 var Subnets_ServiceDesc = grpc.ServiceDesc{
-	ServiceName: "private.v1.Subnets",
+	ServiceName: "osac.private.v1.Subnets",
 	HandlerType: (*SubnetsServer)(nil),
 	Methods: []grpc.MethodDesc{
 		{
@@ -332,5 +332,5 @@ var Subnets_ServiceDesc = grpc.ServiceDesc{
 		},
 	},
 	Streams:  []grpc.StreamDesc{},
-	Metadata: "private/v1/subnets_service.proto",
+	Metadata: "osac/private/v1/subnets_service.proto",
 }
