@@ -70,6 +70,9 @@ var (
 const (
 	// EDA webhook environment variables
 	envComputeInstanceNamespace          = "OSAC_COMPUTE_INSTANCE_NAMESPACE"
+	envSubnetNamespace                   = "OSAC_SUBNET_NAMESPACE"
+	envVirtualNetworkNamespace           = "OSAC_VIRTUAL_NETWORK_NAMESPACE"
+	envSecurityGroupNamespace            = "OSAC_SECURITY_GROUP_NAMESPACE"
 	envComputeInstanceProvisionWebhook   = "OSAC_COMPUTE_INSTANCE_PROVISION_WEBHOOK"
 	envComputeInstanceDeprovisionWebhook = "OSAC_COMPUTE_INSTANCE_DEPROVISION_WEBHOOK"
 
@@ -98,6 +101,7 @@ const (
 	envEnableHostPoolController        = "OSAC_ENABLE_HOST_POOL_CONTROLLER"
 	envEnableComputeInstanceController = "OSAC_ENABLE_COMPUTE_INSTANCE_CONTROLLER"
 	envEnableClusterController         = "OSAC_ENABLE_CLUSTER_CONTROLLER"
+	envEnableNetworkingController      = "OSAC_ENABLE_NETWORKING_CONTROLLER"
 
 	remoteClusterName = "remote"
 )
@@ -332,6 +336,8 @@ func setupHostPoolControllers(
 	return nil
 }
 
+
+
 // setupComputeInstanceControllers registers the ComputeInstance controller and, when grpcConn is set,
 // the ComputeInstance Feedback controller.
 func setupComputeInstanceControllers(
@@ -410,6 +416,102 @@ func setupTenantController(mgr mcmanager.Manager) error {
 	return nil
 }
 
+// setupNetworkingControllers registers the VirtualNetwork, Subnet, and SecurityGroup controllers
+// along with their feedback controllers when grpcConn is set.
+func setupNetworkingControllers(
+	mgr mcmanager.Manager,
+	grpcConn *grpc.ClientConn,
+	maxJobHistory int,
+) error {
+	localMgr := mgr.GetLocalManager()
+
+	// Get namespaces from environment
+	virtualNetworkNamespace := os.Getenv(envVirtualNetworkNamespace)
+	subnetNamespace := os.Getenv(envSubnetNamespace)
+	securityGroupNamespace := os.Getenv(envSecurityGroupNamespace)
+
+	// Get provider configuration
+	providerTypeStr := os.Getenv(envProvisioningProvider)
+	aapURL := os.Getenv(envAAPURL)
+	aapToken := os.Getenv(envAAPToken)
+	provisionTemplate := os.Getenv(envAAPProvisionTemplate)
+	deprovisionTemplate := os.Getenv(envAAPDeprovisionTemplate)
+	aapInsecureSkipVerify := helpers.GetEnvWithDefault(envAAPInsecureSkipVerify, false)
+
+	// Default to AAP provider for networking
+	providerType := provisioning.ProviderType(providerTypeStr)
+	if providerType == "" {
+		providerType = provisioning.ProviderTypeAAP
+	}
+
+	// Create provider (AAP only for networking - no EDA webhook support)
+	networkingProvider, statusPollInterval, err := createAAPProvider(
+		aapURL, aapToken, provisionTemplate, deprovisionTemplate,
+		aapInsecureSkipVerify,
+	)
+	if err != nil {
+		return fmt.Errorf("create networking provisioning provider: %w", err)
+	}
+
+	// Setup VirtualNetwork controller and feedback
+	if grpcConn != nil {
+		if err := controller.NewVirtualNetworkFeedbackReconciler(
+			localMgr.GetClient(),
+			grpcConn,
+			virtualNetworkNamespace,
+		).SetupWithManager(localMgr); err != nil {
+			return fmt.Errorf("virtualnetwork feedback controller: %w", err)
+		}
+	}
+
+	if err := (&controller.VirtualNetworkReconciler{
+		Client:                  localMgr.GetClient(),
+		Scheme:                  localMgr.GetScheme(),
+		VirtualNetworkNamespace: virtualNetworkNamespace,
+		ProvisioningProvider:    networkingProvider,
+		StatusPollInterval:      statusPollInterval,
+		MaxJobHistory:           maxJobHistory,
+	}).SetupWithManager(localMgr); err != nil {
+		return fmt.Errorf("virtualnetwork controller: %w", err)
+	}
+
+	// Setup Subnet controller and feedback
+	if grpcConn != nil {
+		if err := controller.NewSubnetFeedbackReconciler(
+			localMgr.GetClient(),
+			grpcConn,
+			subnetNamespace,
+		).SetupWithManager(localMgr); err != nil {
+			return fmt.Errorf("subnet feedback controller: %w", err)
+		}
+	}
+
+	if err := (&controller.SubnetReconciler{
+		Client:               localMgr.GetClient(),
+		Scheme:               localMgr.GetScheme(),
+		SubnetNamespace:      subnetNamespace,
+		ProvisioningProvider: networkingProvider,
+		StatusPollInterval:   statusPollInterval,
+		MaxJobHistory:        maxJobHistory,
+	}).SetupWithManager(localMgr); err != nil {
+		return fmt.Errorf("subnet controller: %w", err)
+	}
+
+	// Setup SecurityGroup controller (no feedback controller yet)
+	if err := (&controller.SecurityGroupReconciler{
+		Client:                 localMgr.GetClient(),
+		Scheme:                 localMgr.GetScheme(),
+		SecurityGroupNamespace: securityGroupNamespace,
+		ProvisioningProvider:   networkingProvider,
+		StatusPollInterval:     statusPollInterval,
+		MaxJobHistory:          maxJobHistory,
+	}).SetupWithManager(localMgr); err != nil {
+		return fmt.Errorf("securitygroup controller: %w", err)
+	}
+
+	return nil
+}
+
 func main() {
 	var err error
 
@@ -476,6 +578,7 @@ func main() {
 	var enableHostPoolController bool
 	var enableComputeInstanceController bool
 	var enableClusterController bool
+	var enableNetworkingController bool
 	flag.BoolVar(&enableTenantController, "enable-tenant-controller",
 		helpers.GetEnvWithDefault(envEnableTenantController, false),
 		"Enable the tenant controller.")
@@ -488,6 +591,9 @@ func main() {
 	flag.BoolVar(&enableClusterController, "enable-cluster-controller",
 		helpers.GetEnvWithDefault(envEnableClusterController, false),
 		"Enable the cluster controller.")
+	flag.BoolVar(&enableNetworkingController, "enable-networking-controller",
+		helpers.GetEnvWithDefault(envEnableNetworkingController, false),
+		"Enable the networking controllers (VirtualNetwork, Subnet, SecurityGroup).")
 	opts := zap.Options{
 		Development: true,
 	}
@@ -497,11 +603,13 @@ func main() {
 	if !enableTenantController &&
 		!enableHostPoolController &&
 		!enableComputeInstanceController &&
-		!enableClusterController {
+		!enableClusterController &&
+		!enableNetworkingController {
 		enableTenantController = true
 		enableHostPoolController = true
 		enableComputeInstanceController = true
 		enableClusterController = true
+		enableNetworkingController = true
 		setupLog.Info("no controller flags set, enabling all controllers")
 	}
 
@@ -606,6 +714,7 @@ func main() {
 		os.Exit(1)
 	}
 
+	// Create the gRPC connection:
 	var grpcConn *grpc.ClientConn
 	if fulfillmentServerAddress != "" {
 		setupLog.Info("gRPC connection to fulfillment service is enabled")
@@ -643,6 +752,12 @@ func main() {
 	if enableTenantController {
 		if err := setupTenantController(mgr); err != nil {
 			setupLog.Error(err, "unable to setup tenant controller")
+			os.Exit(1)
+		}
+	}
+	if enableNetworkingController {
+		if err := setupNetworkingControllers(mgr, grpcConn, maxJobHistory); err != nil {
+			setupLog.Error(err, "unable to setup networking controllers")
 			os.Exit(1)
 		}
 	}

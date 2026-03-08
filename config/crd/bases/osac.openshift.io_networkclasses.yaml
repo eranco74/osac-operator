@@ -1,0 +1,109 @@
+---
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  annotations:
+    controller-gen.kubebuilder.io/version: v0.20.0
+  name: networkclasses.osac.openshift.io
+spec:
+  group: osac.openshift.io
+  names:
+    kind: NetworkClass
+    listKind: NetworkClassList
+    plural: networkclasses
+    shortNames:
+    - netclass
+    singular: networkclass
+  scope: Namespaced
+  versions:
+  - additionalPrinterColumns:
+    - jsonPath: .spec.implementationStrategy
+      name: Strategy
+      type: string
+    - jsonPath: .status.state
+      name: State
+      type: string
+    - jsonPath: .metadata.creationTimestamp
+      name: Age
+      type: date
+    name: v1alpha1
+    schema:
+      openAPIV3Schema:
+        description: NetworkClass is the Schema for the networkclasses API
+        properties:
+          apiVersion:
+            description: |-
+              APIVersion defines the versioned schema of this representation of an object.
+              Servers should convert recognized schemas to the latest internal value, and
+              may reject unrecognized values.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources
+            type: string
+          kind:
+            description: |-
+              Kind is a string value representing the REST resource this object represents.
+              Servers may infer this from the endpoint the client submits requests to.
+              Cannot be updated.
+              In CamelCase.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds
+            type: string
+          metadata:
+            type: object
+          spec:
+            description: spec defines the desired state of NetworkClass
+            properties:
+              capabilities:
+                description: Capabilities describes the networking capabilities of
+                  this class
+                properties:
+                  supportsDualStack:
+                    description: SupportsDualStack indicates whether this network
+                      class supports dual-stack (IPv4+IPv6)
+                    type: boolean
+                  supportsIPv4:
+                    description: SupportsIPv4 indicates whether this network class
+                      supports IPv4
+                    type: boolean
+                  supportsIPv6:
+                    description: SupportsIPv6 indicates whether this network class
+                      supports IPv6
+                    type: boolean
+                type: object
+              constraints:
+                additionalProperties:
+                  type: string
+                description: Constraints holds provider-specific constraints as key-value
+                  pairs
+                type: object
+              implementationStrategy:
+                description: ImplementationStrategy identifies the network implementation
+                  (e.g., "udn-net", "physical-net")
+                type: string
+            required:
+            - implementationStrategy
+            type: object
+          status:
+            description: status defines the observed state of NetworkClass
+            properties:
+              message:
+                description: Message provides human-readable status or error information
+                type: string
+              state:
+                allOf:
+                - enum:
+                  - Pending
+                  - Ready
+                  - Failed
+                - enum:
+                  - Pending
+                  - Ready
+                  - Failed
+                description: State provides the current state of the NetworkClass
+                type: string
+            type: object
+        required:
+        - spec
+        type: object
+    served: true
+    storage: true
+    subresources:
+      status: {}

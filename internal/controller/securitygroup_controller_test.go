@@ -18,7 +18,6 @@ package controller
 
 import (
 	"context"
-	"errors"
 	"time"
 
 	. "github.com/onsi/ginkgo/v2"

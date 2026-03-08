@@ -321,28 +321,6 @@ func (r *VirtualNetworkReconciler) needsProvisionJob(vnet *v1alpha1.VirtualNetwo
 	return !latestJob.State.IsSuccessful()
 }
 
-// findJobByID finds a job by its ID in the jobs array.
-// Returns a pointer to the job if found, nil otherwise.
-func findJobByID(jobs []v1alpha1.JobStatus, jobID string) *v1alpha1.JobStatus {
-	for i := range jobs {
-		if jobs[i].JobID == jobID {
-			return &jobs[i]
-		}
-	}
-	return nil
-}
-
-// updateJob updates an existing job by ID with new values.
-// Returns true if the job was found and updated, false otherwise.
-func updateJob(jobs []v1alpha1.JobStatus, updatedJob v1alpha1.JobStatus) bool {
-	job := findJobByID(jobs, updatedJob.JobID)
-	if job == nil {
-		return false
-	}
-	*job = updatedJob
-	return true
-}
-
 // appendJob adds a new job to the jobs array and trims to maxHistory.
 func (r *VirtualNetworkReconciler) appendJob(jobs []v1alpha1.JobStatus, newJob v1alpha1.JobStatus) []v1alpha1.JobStatus {
 	jobs = append(jobs, newJob)

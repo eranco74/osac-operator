@@ -102,18 +102,6 @@ func NewComputeInstanceReconciler(
 	}
 }
 
-// findJobByID finds a job by its ID in the jobs array.
-// Returns a pointer to the job if found, nil otherwise.
-// The returned pointer can be used to update the job in place.
-func findJobByID(jobs []v1alpha1.JobStatus, jobID string) *v1alpha1.JobStatus {
-	for i := range jobs {
-		if jobs[i].JobID == jobID {
-			return &jobs[i]
-		}
-	}
-	return nil
-}
-
 // appendJob adds a new job to the jobs array and trims to maxHistory.
 // Jobs are appended in chronological order (oldest first, newest last).
 func (r *ComputeInstanceReconciler) appendJob(jobs []v1alpha1.JobStatus, newJob v1alpha1.JobStatus) []v1alpha1.JobStatus {
@@ -123,17 +111,6 @@ func (r *ComputeInstanceReconciler) appendJob(jobs []v1alpha1.JobStatus, newJob 
 		jobs = jobs[len(jobs)-r.MaxJobHistory:]
 	}
 	return jobs
-}
-
-// updateJob updates an existing job by ID with new values.
-// Returns true if the job was found and updated, false otherwise.
-func updateJob(jobs []v1alpha1.JobStatus, updatedJob v1alpha1.JobStatus) bool {
-	job := findJobByID(jobs, updatedJob.JobID)
-	if job == nil {
-		return false
-	}
-	*job = updatedJob
-	return true
 }
 
 // +kubebuilder:rbac:groups=osac.openshift.io,resources=computeinstances,verbs=get;list;watch;create;update;patch;delete
