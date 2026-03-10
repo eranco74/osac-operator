@@ -760,82 +760,247 @@ var _ = Describe("ComputeInstance Controller", func() {
 			})
 		})
 
-		Describe("needsProvisionJob", func() {
+		Describe("shouldTriggerProvision", func() {
 			var reconciler *ComputeInstanceReconciler
 
 			BeforeEach(func() {
 				reconciler = NewComputeInstanceReconciler(testMcManager, "", "", &mockProvisioningProvider{}, 0, 0, mcmanager.LocalCluster)
 			})
 
-			It("should return true when no job exists", func() {
-				instance := &osacv1alpha1.ComputeInstance{}
-				Expect(reconciler.needsProvisionJob(instance, nil)).To(BeTrue())
-			})
-
-			It("should return true when job has empty ID", func() {
-				instance := &osacv1alpha1.ComputeInstance{}
-				job := &osacv1alpha1.JobStatus{JobID: ""}
-				Expect(reconciler.needsProvisionJob(instance, job)).To(BeTrue())
-			})
-
-			It("should return false when job is still running", func() {
-				instance := &osacv1alpha1.ComputeInstance{}
-				job := &osacv1alpha1.JobStatus{
-					JobID: "job-1",
-					State: osacv1alpha1.JobStateRunning,
+			It("should trigger when no job exists and config versions differ", func() {
+				instance := &osacv1alpha1.ComputeInstance{
+					Status: osacv1alpha1.ComputeInstanceStatus{
+						DesiredConfigVersion: "abc123",
+					},
 				}
-				Expect(reconciler.needsProvisionJob(instance, job)).To(BeFalse())
+				action, job := reconciler.shouldTriggerProvision(ctx, instance)
+				Expect(action).To(Equal(provisionTrigger))
+				Expect(job).To(BeNil())
 			})
 
-			It("should return false when job is pending", func() {
-				instance := &osacv1alpha1.ComputeInstance{}
-				job := &osacv1alpha1.JobStatus{
-					JobID: "job-1",
-					State: osacv1alpha1.JobStatePending,
+			It("should trigger when job has empty ID and config versions differ", func() {
+				instance := &osacv1alpha1.ComputeInstance{
+					Status: osacv1alpha1.ComputeInstanceStatus{
+						DesiredConfigVersion: "abc123",
+						Jobs:                 []osacv1alpha1.JobStatus{{Type: osacv1alpha1.JobTypeProvision, JobID: ""}},
+					},
 				}
-				Expect(reconciler.needsProvisionJob(instance, job)).To(BeFalse())
+				action, _ := reconciler.shouldTriggerProvision(ctx, instance)
+				Expect(action).To(Equal(provisionTrigger))
 			})
 
-			It("should return false when job succeeded and config versions match", func() {
+			It("should skip when no job exists and config versions match", func() {
 				instance := &osacv1alpha1.ComputeInstance{
 					Status: osacv1alpha1.ComputeInstanceStatus{
 						DesiredConfigVersion:    "abc123",
 						ReconciledConfigVersion: "abc123",
 					},
 				}
-				job := &osacv1alpha1.JobStatus{
-					JobID: "job-1",
-					State: osacv1alpha1.JobStateSucceeded,
-				}
-				Expect(reconciler.needsProvisionJob(instance, job)).To(BeFalse())
+				action, job := reconciler.shouldTriggerProvision(ctx, instance)
+				Expect(action).To(Equal(provisionSkip))
+				Expect(job).To(BeNil())
 			})
 
-			It("should return true when job succeeded but config versions differ", func() {
+			It("should poll when job is still running", func() {
+				instance := &osacv1alpha1.ComputeInstance{
+					Status: osacv1alpha1.ComputeInstanceStatus{
+						Jobs: []osacv1alpha1.JobStatus{{Type: osacv1alpha1.JobTypeProvision, JobID: "job-1", State: osacv1alpha1.JobStateRunning}},
+					},
+				}
+				action, job := reconciler.shouldTriggerProvision(ctx, instance)
+				Expect(action).To(Equal(provisionPoll))
+				Expect(job).NotTo(BeNil())
+				Expect(job.JobID).To(Equal("job-1"))
+			})
+
+			It("should poll when job is pending", func() {
+				instance := &osacv1alpha1.ComputeInstance{
+					Status: osacv1alpha1.ComputeInstanceStatus{
+						Jobs: []osacv1alpha1.JobStatus{{Type: osacv1alpha1.JobTypeProvision, JobID: "job-1", State: osacv1alpha1.JobStatePending}},
+					},
+				}
+				action, job := reconciler.shouldTriggerProvision(ctx, instance)
+				Expect(action).To(Equal(provisionPoll))
+				Expect(job).NotTo(BeNil())
+			})
+
+			It("should skip when job succeeded and config versions match", func() {
+				instance := &osacv1alpha1.ComputeInstance{
+					Status: osacv1alpha1.ComputeInstanceStatus{
+						DesiredConfigVersion:    "abc123",
+						ReconciledConfigVersion: "abc123",
+						Jobs:                    []osacv1alpha1.JobStatus{{Type: osacv1alpha1.JobTypeProvision, JobID: "job-1", State: osacv1alpha1.JobStateSucceeded}},
+					},
+				}
+				action, job := reconciler.shouldTriggerProvision(ctx, instance)
+				Expect(action).To(Equal(provisionSkip))
+				Expect(job).NotTo(BeNil())
+			})
+
+			It("should trigger when job succeeded but config versions differ", func() {
 				instance := &osacv1alpha1.ComputeInstance{
 					Status: osacv1alpha1.ComputeInstanceStatus{
 						DesiredConfigVersion:    "new-version",
 						ReconciledConfigVersion: "old-version",
+						Jobs:                    []osacv1alpha1.JobStatus{{Type: osacv1alpha1.JobTypeProvision, JobID: "job-1", State: osacv1alpha1.JobStateSucceeded}},
 					},
 				}
-				job := &osacv1alpha1.JobStatus{
-					JobID: "job-1",
-					State: osacv1alpha1.JobStateSucceeded,
-				}
-				Expect(reconciler.needsProvisionJob(instance, job)).To(BeTrue())
+				action, job := reconciler.shouldTriggerProvision(ctx, instance)
+				Expect(action).To(Equal(provisionTrigger))
+				Expect(job).NotTo(BeNil())
 			})
 
-			It("should return true when job failed and config versions differ", func() {
+			It("should trigger when job failed and config versions differ", func() {
 				instance := &osacv1alpha1.ComputeInstance{
 					Status: osacv1alpha1.ComputeInstanceStatus{
 						DesiredConfigVersion:    "new-version",
 						ReconciledConfigVersion: "old-version",
+						Jobs:                    []osacv1alpha1.JobStatus{{Type: osacv1alpha1.JobTypeProvision, JobID: "job-1", State: osacv1alpha1.JobStateFailed}},
 					},
 				}
-				job := &osacv1alpha1.JobStatus{
-					JobID: "job-1",
-					State: osacv1alpha1.JobStateFailed,
+				action, job := reconciler.shouldTriggerProvision(ctx, instance)
+				Expect(action).To(Equal(provisionTrigger))
+				Expect(job).NotTo(BeNil())
+			})
+
+			It("should skip when job failed but config versions match", func() {
+				instance := &osacv1alpha1.ComputeInstance{
+					Status: osacv1alpha1.ComputeInstanceStatus{
+						DesiredConfigVersion:    "abc123",
+						ReconciledConfigVersion: "abc123",
+						Jobs:                    []osacv1alpha1.JobStatus{{Type: osacv1alpha1.JobTypeProvision, JobID: "job-1", State: osacv1alpha1.JobStateFailed}},
+					},
 				}
-				Expect(reconciler.needsProvisionJob(instance, job)).To(BeTrue())
+				action, job := reconciler.shouldTriggerProvision(ctx, instance)
+				Expect(action).To(Equal(provisionSkip))
+				Expect(job).NotTo(BeNil())
+			})
+
+			It("should requeue when API server has non-terminal job but cache shows none", func() {
+				// Create instance in API server with a running provision job
+				instanceName := "test-api-server-check-no-cache"
+				apiInstance := &osacv1alpha1.ComputeInstance{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      instanceName,
+						Namespace: "default",
+					},
+					Spec: newTestComputeInstanceSpec("test_template"),
+				}
+				Expect(k8sClient.Create(ctx, apiInstance)).To(Succeed())
+				DeferCleanup(func() {
+					_ = k8sClient.Delete(ctx, apiInstance)
+				})
+
+				jobTimestamp := metav1.NewTime(time.Now().UTC())
+				apiInstance.Status.DesiredConfigVersion = "v1"
+				apiInstance.Status.Jobs = []osacv1alpha1.JobStatus{
+					{Type: osacv1alpha1.JobTypeProvision, JobID: "running-job", State: osacv1alpha1.JobStateRunning, Timestamp: jobTimestamp},
+				}
+				Expect(k8sClient.Status().Update(ctx, apiInstance)).To(Succeed())
+
+				// Simulate stale cache: in-memory instance has no jobs
+				staleInstance := &osacv1alpha1.ComputeInstance{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      instanceName,
+						Namespace: "default",
+					},
+					Status: osacv1alpha1.ComputeInstanceStatus{
+						DesiredConfigVersion: "v1",
+					},
+				}
+
+				action, job := reconciler.shouldTriggerProvision(ctx, staleInstance)
+				Expect(action).To(Equal(provisionRequeue))
+				Expect(job).To(BeNil())
+			})
+
+			It("should requeue when API server has non-terminal job but cache shows terminal job with version mismatch", func() {
+				// Create instance in API server with a running provision job (newer than the terminal one)
+				instanceName := "test-api-server-check-stale-terminal"
+				apiInstance := &osacv1alpha1.ComputeInstance{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      instanceName,
+						Namespace: "default",
+					},
+					Spec: newTestComputeInstanceSpec("test_template"),
+				}
+				Expect(k8sClient.Create(ctx, apiInstance)).To(Succeed())
+				DeferCleanup(func() {
+					_ = k8sClient.Delete(ctx, apiInstance)
+				})
+
+				oldJobTimestamp := metav1.NewTime(time.Now().UTC().Add(-time.Minute))
+				newJobTimestamp := metav1.NewTime(time.Now().UTC())
+				apiInstance.Status.DesiredConfigVersion = "v2"
+				apiInstance.Status.ReconciledConfigVersion = "v1"
+				apiInstance.Status.Jobs = []osacv1alpha1.JobStatus{
+					{Type: osacv1alpha1.JobTypeProvision, JobID: "old-job", State: osacv1alpha1.JobStateSucceeded, Timestamp: oldJobTimestamp},
+					{Type: osacv1alpha1.JobTypeProvision, JobID: "new-running-job", State: osacv1alpha1.JobStateRunning, Timestamp: newJobTimestamp},
+				}
+				Expect(k8sClient.Status().Update(ctx, apiInstance)).To(Succeed())
+
+				// Simulate stale cache: in-memory instance only has the old terminal job
+				staleInstance := &osacv1alpha1.ComputeInstance{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      instanceName,
+						Namespace: "default",
+					},
+					Status: osacv1alpha1.ComputeInstanceStatus{
+						DesiredConfigVersion:    "v2",
+						ReconciledConfigVersion: "v1",
+						Jobs: []osacv1alpha1.JobStatus{
+							{Type: osacv1alpha1.JobTypeProvision, JobID: "old-job", State: osacv1alpha1.JobStateSucceeded},
+						},
+					},
+				}
+
+				action, job := reconciler.shouldTriggerProvision(ctx, staleInstance)
+				Expect(action).To(Equal(provisionRequeue))
+				Expect(job).To(BeNil())
+			})
+
+			It("should trigger when API server also shows no non-terminal job", func() {
+				// Create instance in API server with only a terminal job
+				instanceName := "test-api-server-check-all-terminal"
+				apiInstance := &osacv1alpha1.ComputeInstance{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      instanceName,
+						Namespace: "default",
+					},
+					Spec: newTestComputeInstanceSpec("test_template"),
+				}
+				Expect(k8sClient.Create(ctx, apiInstance)).To(Succeed())
+				DeferCleanup(func() {
+					_ = k8sClient.Delete(ctx, apiInstance)
+				})
+
+				jobTimestamp := metav1.NewTime(time.Now().UTC())
+				apiInstance.Status.DesiredConfigVersion = "v2"
+				apiInstance.Status.ReconciledConfigVersion = "v1"
+				apiInstance.Status.Jobs = []osacv1alpha1.JobStatus{
+					{Type: osacv1alpha1.JobTypeProvision, JobID: "done-job", State: osacv1alpha1.JobStateSucceeded, Timestamp: jobTimestamp},
+				}
+				Expect(k8sClient.Status().Update(ctx, apiInstance)).To(Succeed())
+
+				// In-memory instance matches API server — terminal job, versions differ
+				staleInstance := &osacv1alpha1.ComputeInstance{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      instanceName,
+						Namespace: "default",
+					},
+					Status: osacv1alpha1.ComputeInstanceStatus{
+						DesiredConfigVersion:    "v2",
+						ReconciledConfigVersion: "v1",
+						Jobs: []osacv1alpha1.JobStatus{
+							{Type: osacv1alpha1.JobTypeProvision, JobID: "done-job", State: osacv1alpha1.JobStateSucceeded},
+						},
+					},
+				}
+
+				action, job := reconciler.shouldTriggerProvision(ctx, staleInstance)
+				Expect(action).To(Equal(provisionTrigger))
+				Expect(job).NotTo(BeNil())
+				Expect(job.JobID).To(Equal("done-job"))
 			})
 		})
 	})
@@ -892,6 +1057,59 @@ var _ = Describe("ComputeInstance Controller", func() {
 				g.Expect(k8sClient.Get(ctx, nn, ci)).To(Succeed())
 				g.Expect(ci.Status.Phase).To(Equal(osacv1alpha1.ComputeInstancePhaseStarting))
 			}).Should(Succeed())
+		})
+
+		It("should trigger provisioning only once when reconciled twice in rapid succession", func() {
+			const resourceName = "test-duplicate-provision"
+			const tenantName = "tenant-dup-provision"
+			DeferCleanup(func() {
+				deleteCI(resourceName)
+				deleteTenantInNamespace(ctx, namespaceName, tenantName)
+			})
+			createReadyTenant(ctx, namespaceName, tenantName)
+
+			objectKey := types.NamespacedName{Name: resourceName, Namespace: namespaceName}
+			resource := &osacv1alpha1.ComputeInstance{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      resourceName,
+					Namespace: namespaceName,
+					Annotations: map[string]string{
+						osacTenantAnnotation: tenantName,
+					},
+				},
+				Spec: newTestComputeInstanceSpec("test_template"),
+			}
+			Expect(k8sClient.Create(ctx, resource)).To(Succeed())
+
+			triggerCount := 0
+			provider := &mockProvisioningProvider{
+				name: string(provisioning.ProviderTypeAAP),
+				triggerProvisionFunc: func(ctx context.Context, resource client.Object) (*provisioning.ProvisionResult, error) {
+					triggerCount++
+					return &provisioning.ProvisionResult{
+						JobID:        fmt.Sprintf("job-%d", triggerCount),
+						InitialState: osacv1alpha1.JobStateRunning,
+						Message:      "running",
+					}, nil
+				},
+			}
+			reconciler := NewComputeInstanceReconciler(testMcManager, "", namespaceName, provider, 100*time.Millisecond, 0, mcmanager.LocalCluster)
+
+			Eventually(func() error {
+				return reconciler.Client.Get(ctx, objectKey, &osacv1alpha1.ComputeInstance{})
+			}, 2*time.Second, 10*time.Millisecond).Should(Succeed())
+
+			reconcileRequest := mcreconcile.Request{Request: reconcile.Request{NamespacedName: objectKey}}
+
+			// First reconcile — should trigger provisioning
+			_, err := reconciler.Reconcile(ctx, reconcileRequest)
+			Expect(err).NotTo(HaveOccurred())
+
+			// Second reconcile — should NOT trigger provisioning again
+			_, err = reconciler.Reconcile(ctx, reconcileRequest)
+			Expect(err).NotTo(HaveOccurred())
+
+			Expect(triggerCount).To(Equal(1), "TriggerProvision should be called exactly once")
 		})
 
 		It("should set Starting phase when no KubeVirt VM exists", func() {

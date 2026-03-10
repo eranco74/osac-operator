@@ -102,12 +102,23 @@ var _ = Describe("ComputeInstance Provisioning", func() {
 				Name:      "test-instance",
 				Namespace: "default",
 			},
-			Spec: newTestComputeInstanceSpec("test_template"),
+			Spec:   newTestComputeInstanceSpec("test_template"),
+			Status: osacv1alpha1.ComputeInstanceStatus{DesiredConfigVersion: "initial"},
 		}
 		reconciler = NewComputeInstanceReconciler(testMcManager, "", "", &mockProvisioningProvider{}, 30*time.Second, DefaultMaxJobHistory, mcmanager.LocalCluster)
 	})
 
 	Context("handleProvisioning", func() {
+		It("should skip when config versions match", func() {
+			instance.Status.DesiredConfigVersion = "v1"
+			instance.Status.ReconciledConfigVersion = "v1"
+
+			result, err := reconciler.handleProvisioning(ctx, instance)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(result.RequeueAfter).To(BeZero())
+			Expect(instance.Status.Jobs).To(BeEmpty())
+		})
+
 		It("should trigger provision when no job ID exists", func() {
 			provider := &mockProvisioningProvider{
 				triggerProvisionFunc: func(ctx context.Context, resource client.Object) (*provisioning.ProvisionResult, error) {

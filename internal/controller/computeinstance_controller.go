@@ -361,46 +361,64 @@ func (r *ComputeInstanceReconciler) handleProvisioning(ctx context.Context, inst
 	}
 
 	// Check if we need to trigger a (new) provision job
-	latestProvisionJob := v1alpha1.FindLatestJobByType(instance.Status.Jobs, v1alpha1.JobTypeProvision)
+	action, latestProvisionJob := r.shouldTriggerProvision(ctx, instance)
 
-	if r.needsProvisionJob(instance, latestProvisionJob) {
-		log.Info("triggering provisioning", "provider", r.ProvisioningProvider.Name())
-		result, err := r.ProvisioningProvider.TriggerProvision(ctx, instance)
-		if err != nil {
-			// Check if this is a rate limit error
-			var rateLimitErr *provisioning.RateLimitError
-			if errors.As(err, &rateLimitErr) {
-				log.Info("provisioning request rate-limited, will retry", "retryAfter", rateLimitErr.RetryAfter)
-				return ctrl.Result{RequeueAfter: rateLimitErr.RetryAfter}, nil
-			}
+	switch action {
+	case provisionSkip:
+		return ctrl.Result{}, nil
+	case provisionTrigger:
+		return r.triggerProvisionJob(ctx, instance)
+	case provisionRequeue:
+		return ctrl.Result{RequeueAfter: r.StatusPollInterval}, nil
+	default: // provisionPoll
+		return r.pollProvisionJob(ctx, instance, latestProvisionJob)
+	}
+}
 
-			// Actual error - mark as failed
-			log.Error(err, "failed to trigger provisioning")
-			newJob := v1alpha1.JobStatus{
-				JobID:     "",
-				Type:      v1alpha1.JobTypeProvision,
-				Timestamp: metav1.NewTime(time.Now().UTC()),
-				State:     v1alpha1.JobStateFailed,
-				Message:   fmt.Sprintf("Failed to trigger provisioning: %v", err),
-			}
-			instance.Status.Jobs = r.appendJob(instance.Status.Jobs, newJob)
-			return ctrl.Result{RequeueAfter: r.StatusPollInterval}, nil
+// triggerProvisionJob triggers a new provision job and records it in the instance status.
+func (r *ComputeInstanceReconciler) triggerProvisionJob(ctx context.Context, instance *v1alpha1.ComputeInstance) (ctrl.Result, error) {
+	log := ctrllog.FromContext(ctx)
+
+	log.Info("triggering provisioning", "provider", r.ProvisioningProvider.Name())
+	result, err := r.ProvisioningProvider.TriggerProvision(ctx, instance)
+	if err != nil {
+		// Check if this is a rate limit error
+		var rateLimitErr *provisioning.RateLimitError
+		if errors.As(err, &rateLimitErr) {
+			log.Info("provisioning request rate-limited, will retry", "retryAfter", rateLimitErr.RetryAfter)
+			return ctrl.Result{RequeueAfter: rateLimitErr.RetryAfter}, nil
 		}
 
+		// Actual error - mark as failed
+		log.Error(err, "failed to trigger provisioning")
 		newJob := v1alpha1.JobStatus{
-			JobID:                  result.JobID,
-			Type:                   v1alpha1.JobTypeProvision,
-			Timestamp:              metav1.NewTime(time.Now().UTC()),
-			State:                  result.InitialState,
-			Message:                result.Message,
-			BlockDeletionOnFailure: false, // Provision failures don't block deletion
+			JobID:     "",
+			Type:      v1alpha1.JobTypeProvision,
+			Timestamp: metav1.NewTime(time.Now().UTC()),
+			State:     v1alpha1.JobStateFailed,
+			Message:   fmt.Sprintf("Failed to trigger provisioning: %v", err),
 		}
 		instance.Status.Jobs = r.appendJob(instance.Status.Jobs, newJob)
-		log.Info("provisioning job triggered", "jobID", result.JobID)
 		return ctrl.Result{RequeueAfter: r.StatusPollInterval}, nil
 	}
 
-	// We have a job ID, check its status
+	newJob := v1alpha1.JobStatus{
+		JobID:                  result.JobID,
+		Type:                   v1alpha1.JobTypeProvision,
+		Timestamp:              metav1.NewTime(time.Now().UTC()),
+		State:                  result.InitialState,
+		Message:                result.Message,
+		BlockDeletionOnFailure: false, // Provision failures don't block deletion
+	}
+	instance.Status.Jobs = r.appendJob(instance.Status.Jobs, newJob)
+	log.Info("provisioning job triggered", "jobID", result.JobID)
+	return ctrl.Result{RequeueAfter: r.StatusPollInterval}, nil
+}
+
+// pollProvisionJob checks the status of an existing provision job and updates the instance accordingly.
+func (r *ComputeInstanceReconciler) pollProvisionJob(ctx context.Context, instance *v1alpha1.ComputeInstance, latestProvisionJob *v1alpha1.JobStatus) (ctrl.Result, error) {
+	log := ctrllog.FromContext(ctx)
+
 	status, err := r.ProvisioningProvider.GetProvisionStatus(ctx, instance, latestProvisionJob.JobID)
 	if err != nil {
 		log.Error(err, "failed to get provision job status", "jobID", latestProvisionJob.JobID)
@@ -928,16 +946,54 @@ func determinePhaseFromPrintableStatus(ctx context.Context, kv *kubevirtv1.Virtu
 	}
 }
 
-// needsProvisionJob returns true when we should trigger a new provision job.
-// This is the case when no job exists yet, or when the spec has changed since the last successful provision.
-func (r *ComputeInstanceReconciler) needsProvisionJob(instance *v1alpha1.ComputeInstance, latestJob *v1alpha1.JobStatus) bool {
-	if latestJob == nil || latestJob.JobID == "" {
-		return true
+// provisionAction represents the outcome of shouldTriggerProvision.
+type provisionAction int
+
+const (
+	provisionSkip    provisionAction = iota // nothing to do
+	provisionTrigger                        // trigger a new provision job
+	provisionPoll                           // poll an existing non-terminal job
+	provisionRequeue                        // stale cache detected, requeue to refresh
+)
+
+// shouldTriggerProvision determines the next provisioning action.
+// Returns provisionPoll with the in-progress job when one is already running.
+// Returns provisionSkip when config versions match (no change needed).
+// Returns provisionRequeue when the API server has a non-terminal job that the cache missed (stale cache).
+// Returns provisionTrigger when provisioning is needed and no in-flight job exists.
+func (r *ComputeInstanceReconciler) shouldTriggerProvision(ctx context.Context, instance *v1alpha1.ComputeInstance) (provisionAction, *v1alpha1.JobStatus) {
+	latestJob := v1alpha1.FindLatestJobByType(instance.Status.Jobs, v1alpha1.JobTypeProvision)
+
+	if latestJob != nil && latestJob.JobID != "" && !latestJob.State.IsTerminal() {
+		return provisionPoll, latestJob
 	}
-	if !latestJob.State.IsTerminal() {
-		return false
+	if instance.Status.DesiredConfigVersion == instance.Status.ReconciledConfigVersion {
+		return provisionSkip, latestJob
 	}
-	return instance.Status.DesiredConfigVersion != instance.Status.ReconciledConfigVersion
+	// Provision is needed (no job, or spec changed since last terminal job).
+	// Check the API server to guard against stale informer cache: a prior
+	// reconcile may have already triggered a job that the cache hasn't picked up.
+	if _, ok := r.checkAPIServerForNonTerminalJob(ctx, instance); ok {
+		return provisionRequeue, nil
+	}
+	return provisionTrigger, latestJob
+}
+
+// checkAPIServerForNonTerminalJob reads the instance directly from the API server
+// and returns a non-terminal provision job if one exists. This guards against
+// duplicate triggers when the informer cache is stale between back-to-back reconciles.
+func (r *ComputeInstanceReconciler) checkAPIServerForNonTerminalJob(ctx context.Context, instance *v1alpha1.ComputeInstance) (*v1alpha1.JobStatus, bool) {
+	log := ctrllog.FromContext(ctx)
+	fresh := &v1alpha1.ComputeInstance{}
+	if err := r.mgr.GetLocalManager().GetAPIReader().Get(ctx, client.ObjectKeyFromObject(instance), fresh); err != nil {
+		return nil, false
+	}
+	freshJob := v1alpha1.FindLatestJobByType(fresh.Status.Jobs, v1alpha1.JobTypeProvision)
+	if freshJob != nil && freshJob.JobID != "" && !freshJob.State.IsTerminal() {
+		log.Info("skipping provision trigger: non-terminal job found via API server", "jobID", freshJob.JobID, "state", freshJob.State)
+		return freshJob, true
+	}
+	return nil, false
 }
 
 // handleDesiredConfigVersion computes a version (hash) of the spec (using FNV-1a) and stores it as hexadecimal in status.DesiredConfigVersion.
