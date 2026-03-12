@@ -51,28 +51,34 @@ into the manager deployment). The following are supported:
 The operator supports two providers: **EDA** (webhooks) and **AAP** (Ansible
 Automation Platform).
 
-**Provider selection:** 
-`OSAC_PROVISIONING_PROVIDER` — `"eda"` (default) or `"aap"`.
+**Provider selection:**
 
-**EDA provider (default):** 
--`OSAC_COMPUTE_INSTANCE_PROVISION_WEBHOOK` — webhook URL for provisioning. 
+- `OSAC_PROVISIONING_PROVIDER` — `"eda"` (default) or `"aap"`.
+
+**EDA provider (default):**
+
+- `OSAC_COMPUTE_INSTANCE_PROVISION_WEBHOOK` — webhook URL for provisioning.
 - `OSAC_COMPUTE_INSTANCE_DEPROVISION_WEBHOOK` — webhook URL for deprovisioning.
 
-**AAP provider** - `OSAC_AAP_URL` — AAP server URL (required when using AAP). -
-`OSAC_AAP_TOKEN` — AAP authentication token (required when using AAP). -
-`OSAC_AAP_PROVISION_TEMPLATE` — template name for provisioning (optional). -
-`OSAC_AAP_DEPROVISION_TEMPLATE` — template name for deprovisioning (optional). -
-`OSAC_AAP_STATUS_POLL_INTERVAL` — job status polling interval (optional,
-default: 30s). Duration strings e.g. `30s`, `1m`. -
-`OSAC_AAP_INSECURE_SKIP_VERIFY` — skip TLS verification for AAP (optional,
-default: false). Set to a truthy value to enable.
+**AAP provider:**
 
-**Namespaces and remote cluster** - `OSAC_COMPUTE_INSTANCE_NAMESPACE` —
-namespace for ComputeInstance resources (optional). - `OSAC_TENANT_NAMESPACE` —
-namespace for Tenant resources (optional). - `OSAC_REMOTE_CLUSTER_KUBECONFIG` —
-path to kubeconfig for the remote cluster used by tenant and compute-instance
-controllers (optional). Not supported when cluster or host-pool controllers are
-enabled.
+- `OSAC_AAP_URL` — AAP server URL (required when using AAP).
+- `OSAC_AAP_TOKEN` — AAP authentication token (required when using AAP).
+- `OSAC_AAP_PROVISION_TEMPLATE` — template name for provisioning (optional).
+- `OSAC_AAP_DEPROVISION_TEMPLATE` — template name for deprovisioning (optional).
+- `OSAC_AAP_STATUS_POLL_INTERVAL` — job status polling interval (optional,
+  default: 30s). Duration strings e.g. `30s`, `1m`. -
+- `OSAC_AAP_INSECURE_SKIP_VERIFY` — skip TLS verification for AAP (optional,
+  default: false). Set to a truthy value to enable.
+
+**Namespaces and remote cluster:**
+
+- `OSAC_COMPUTE_INSTANCE_NAMESPACE` — namespace for ComputeInstance resources
+  (optional).
+- `OSAC_TENANT_NAMESPACE` — namespace for Tenant resources (optional).
+- `OSAC_REMOTE_CLUSTER_KUBECONFIG` — path to kubeconfig for the remote cluster
+  used by tenant and compute-instance controllers (optional). Not supported when
+  cluster or host-pool controllers are enabled.
 
 ### Networking (VirtualNetwork, Subnet, SecurityGroup)
 
@@ -150,8 +156,9 @@ make deploy IMG=<some-registry>/osac-operator:tag
 > **NOTE**: If you encounter RBAC errors, you may need to grant yourself
 > cluster-admin privileges or be logged in as admin.
 
-**Create instances of your solution** You can apply the samples (examples) from
-the config/sample:
+**Create instances of your solution**
+
+You can apply the samples (examples) from the config/sample:
 
 ``` sh
 kubectl apply -k config/samples/
