@@ -105,10 +105,31 @@ func (p *AAPProvider) GetProvisionStatus(ctx context.Context, resource client.Ob
 }
 
 // TriggerDeprovision attempts to start deprovisioning for a resource.
+// For ComputeInstance resources, it checks whether a running provision job needs
+// to be cancelled first (including EDA provider switch scenarios).
+// For all other resource types, it launches the deprovision job directly.
 func (p *AAPProvider) TriggerDeprovision(ctx context.Context, resource client.Object) (*DeprovisionResult, error) {
-	instance := resource.(*v1alpha1.ComputeInstance)
+	// ComputeInstance has special pre-deprovision checks (EDA compatibility, job cancellation)
+	if instance, ok := resource.(*v1alpha1.ComputeInstance); ok {
+		return p.triggerComputeInstanceDeprovision(ctx, instance)
+	}
 
-	// Check if provision job needs to be terminated first
+	// For all other resource types, launch deprovision directly
+	jobID, err := p.launchDeprovisionJob(ctx, resource)
+	if err != nil {
+		return nil, err
+	}
+
+	return &DeprovisionResult{
+		Action:                 DeprovisionTriggered,
+		JobID:                  jobID,
+		BlockDeletionOnFailure: true,
+	}, nil
+}
+
+// triggerComputeInstanceDeprovision handles deprovisioning for ComputeInstance resources,
+// which may have EDA provision jobs that need special handling before deprovisioning.
+func (p *AAPProvider) triggerComputeInstanceDeprovision(ctx context.Context, instance *v1alpha1.ComputeInstance) (*DeprovisionResult, error) {
 	ready, provisionStatus, err := p.isReadyForDeprovision(ctx, instance)
 	if err != nil {
 		return nil, err
@@ -121,8 +142,7 @@ func (p *AAPProvider) TriggerDeprovision(ctx context.Context, resource client.Ob
 		}, nil
 	}
 
-	// Launch deprovision job
-	jobID, err := p.launchDeprovisionJob(ctx, resource)
+	jobID, err := p.launchDeprovisionJob(ctx, instance)
 	if err != nil {
 		return nil, err
 	}
