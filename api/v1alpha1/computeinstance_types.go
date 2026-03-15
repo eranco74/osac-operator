@@ -142,6 +142,29 @@ type ComputeInstanceSpec struct {
 	// +kubebuilder:validation:Optional
 	// +kubebuilder:validation:Format=date-time
 	RestartRequestedAt *metav1.Time `json:"restartRequestedAt,omitempty"`
+
+	// NetworkAttachments is an optional list of network attachments connecting
+	// this instance to OSAC Subnets. Each entry attaches the VM to a Subnet and
+	// optionally applies SecurityGroups for traffic control.
+	// Omitting this field or providing an empty array results in default networking behavior.
+	// +kubebuilder:validation:Optional
+	// +kubebuilder:validation:MaxItems=5
+	NetworkAttachments []NetworkAttachment `json:"networkAttachments,omitempty"`
+}
+
+// NetworkAttachment defines a network connection for a ComputeInstance to an
+// OSAC Subnet, with optional SecurityGroup references for traffic control.
+type NetworkAttachment struct {
+	// Subnet is the name of a Subnet resource within the tenant's VirtualNetwork.
+	// +kubebuilder:validation:Required
+	// +kubebuilder:validation:MinLength=1
+	Subnet string `json:"subnet"`
+
+	// SecurityGroups is an optional list of SecurityGroup names to apply to this
+	// network attachment. All SecurityGroups must belong to the same VirtualNetwork
+	// as the referenced Subnet.
+	// +kubebuilder:validation:Optional
+	SecurityGroups []string `json:"securityGroups,omitempty"`
 }
 
 // ComputeInstancePhaseType is a valid value for .status.phase
@@ -194,6 +217,22 @@ const (
 	// ComputeInstanceConditionRestartRequired means the compute instance requires a restart for
 	// configuration changes to take effect. Synced from KubeVirt VM.Status.Conditions[RestartRequired].
 	ComputeInstanceConditionRestartRequired ComputeInstanceConditionType = "RestartRequired"
+
+	// ComputeInstanceConditionNetworkAttached indicates whether all network attachments
+	// have been successfully configured on the underlying VM.
+	// True when all networkAttachments are resolved and interfaces configured.
+	// False when one or more attachments could not be configured.
+	// Not present when no networkAttachments are specified (default networking).
+	ComputeInstanceConditionNetworkAttached ComputeInstanceConditionType = "NetworkAttached"
+)
+
+// NetworkAttached condition reason constants.
+const (
+	ReasonAllAttachmentsConfigured = "AllAttachmentsConfigured"
+	ReasonAttachmentFailed         = "AttachmentFailed"
+	ReasonSubnetNotReady           = "SubnetNotReady"
+	ReasonUDNNotFound              = "UDNNotFound"
+	ReasonNetworkReconciling       = "Reconciling"
 )
 
 // VirtualMachineReferenceType contains a reference to the KubeVirt VirtualMachine CR created by this ComputeInstance
