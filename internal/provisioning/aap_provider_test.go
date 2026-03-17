@@ -749,10 +749,10 @@ var _ = Describe("AAPProvider", func() {
 		})
 
 		It("should return error when resource has no Kind set", func() {
-			noKindResource := &mockResource{
+			instance := &v1alpha1.ComputeInstance{
 				ObjectMeta: metav1.ObjectMeta{Name: "test", Namespace: "default"},
 			}
-			_, err := provider.TriggerProvision(ctx, noKindResource)
+			_, err := provider.TriggerProvision(ctx, instance)
 			Expect(err).To(HaveOccurred())
 			Expect(err.Error()).To(ContainSubstring("resource has no Kind set"))
 		})
