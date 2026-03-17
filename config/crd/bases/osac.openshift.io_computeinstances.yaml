@@ -70,11 +70,6 @@ spec:
                       format: int32
                       minimum: 1
                       type: integer
-                    storageClass:
-                      description: |-
-                        StorageClass is the Kubernetes storage class to use for this disk
-                        If not specified, the default storage class will be used
-                      type: string
                   required:
                   - sizeGiB
                   type: object
@@ -90,11 +85,6 @@ spec:
                     format: int32
                     minimum: 1
                     type: integer
-                  storageClass:
-                    description: |-
-                      StorageClass is the Kubernetes storage class to use for this disk
-                      If not specified, the default storage class will be used
-                    type: string
                 required:
                 - sizeGiB
                 type: object

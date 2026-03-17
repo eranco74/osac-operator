@@ -52,11 +52,6 @@ type DiskSpec struct {
 	// +kubebuilder:validation:Required
 	// +kubebuilder:validation:Minimum=1
 	SizeGiB int32 `json:"sizeGiB"`
-
-	// StorageClass is the Kubernetes storage class to use for this disk
-	// If not specified, the default storage class will be used
-	// +kubebuilder:validation:Optional
-	StorageClass string `json:"storageClass,omitempty"`
 }
 
 // RunStrategyType defines valid VM run strategies
