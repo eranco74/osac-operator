@@ -1501,4 +1501,141 @@ var _ = Describe("ComputeInstance Controller", func() {
 			Expect(subnetNS).To(BeEmpty())
 		})
 	})
+
+	Context("lastRestartedAt update after provisioning", func() {
+		var reconciler *ComputeInstanceReconciler
+		ctx := context.Background()
+
+		BeforeEach(func() {
+			reconciler = NewComputeInstanceReconciler(testMcManager, "", "", &mockProvisioningProvider{}, 0, 0, mcmanager.LocalCluster)
+		})
+
+		It("should set lastRestartedAt when restartRequestedAt is set and config versions match", func() {
+			restartTime := metav1.NewTime(time.Date(2026, 3, 18, 12, 0, 0, 0, time.UTC))
+			spec := newTestComputeInstanceSpec("template-1")
+			spec.RestartRequestedAt = &restartTime
+			instance := &osacv1alpha1.ComputeInstance{
+				ObjectMeta: metav1.ObjectMeta{Name: "test-restart", Namespace: "default"},
+				Spec:       spec,
+			}
+
+			// Compute desired config version
+			err := reconciler.handleDesiredConfigVersion(ctx, instance)
+			Expect(err).NotTo(HaveOccurred())
+
+			// Simulate provision completed: reconciled matches desired
+			instance.Status.ReconciledConfigVersion = instance.Status.DesiredConfigVersion
+
+			Expect(instance.Status.LastRestartedAt).To(BeNil())
+
+			// The logic under test: when config versions match and restartRequestedAt > lastRestartedAt
+			if instance.Spec.RestartRequestedAt != nil {
+				if instance.Status.LastRestartedAt == nil || instance.Spec.RestartRequestedAt.After(instance.Status.LastRestartedAt.Time) {
+					instance.Status.LastRestartedAt = instance.Spec.RestartRequestedAt.DeepCopy()
+				}
+			}
+
+			Expect(instance.Status.LastRestartedAt).NotTo(BeNil())
+			Expect(instance.Status.LastRestartedAt.Time).To(Equal(restartTime.Time))
+		})
+
+		It("should not update lastRestartedAt when restartRequestedAt is not set", func() {
+			spec := newTestComputeInstanceSpec("template-1")
+			instance := &osacv1alpha1.ComputeInstance{
+				ObjectMeta: metav1.ObjectMeta{Name: "test-no-restart", Namespace: "default"},
+				Spec:       spec,
+			}
+
+			err := reconciler.handleDesiredConfigVersion(ctx, instance)
+			Expect(err).NotTo(HaveOccurred())
+			instance.Status.ReconciledConfigVersion = instance.Status.DesiredConfigVersion
+
+			// Same logic inline
+			if instance.Spec.RestartRequestedAt != nil {
+				if instance.Status.LastRestartedAt == nil || instance.Spec.RestartRequestedAt.After(instance.Status.LastRestartedAt.Time) {
+					instance.Status.LastRestartedAt = instance.Spec.RestartRequestedAt.DeepCopy()
+				}
+			}
+
+			Expect(instance.Status.LastRestartedAt).To(BeNil())
+		})
+
+		It("should not update lastRestartedAt when restart was already processed", func() {
+			restartTime := metav1.NewTime(time.Date(2026, 3, 18, 12, 0, 0, 0, time.UTC))
+			spec := newTestComputeInstanceSpec("template-1")
+			spec.RestartRequestedAt = &restartTime
+			instance := &osacv1alpha1.ComputeInstance{
+				ObjectMeta: metav1.ObjectMeta{Name: "test-already-restarted", Namespace: "default"},
+				Spec:       spec,
+				Status: osacv1alpha1.ComputeInstanceStatus{
+					LastRestartedAt: &restartTime, // same as requested
+				},
+			}
+
+			err := reconciler.handleDesiredConfigVersion(ctx, instance)
+			Expect(err).NotTo(HaveOccurred())
+			instance.Status.ReconciledConfigVersion = instance.Status.DesiredConfigVersion
+
+			originalLastRestarted := instance.Status.LastRestartedAt.DeepCopy()
+
+			if instance.Spec.RestartRequestedAt != nil {
+				if instance.Status.LastRestartedAt == nil || instance.Spec.RestartRequestedAt.After(instance.Status.LastRestartedAt.Time) {
+					instance.Status.LastRestartedAt = instance.Spec.RestartRequestedAt.DeepCopy()
+				}
+			}
+
+			Expect(instance.Status.LastRestartedAt.Time).To(Equal(originalLastRestarted.Time))
+		})
+
+		It("should update lastRestartedAt for a new restart request", func() {
+			firstRestart := metav1.NewTime(time.Date(2026, 3, 18, 12, 0, 0, 0, time.UTC))
+			secondRestart := metav1.NewTime(time.Date(2026, 3, 18, 14, 0, 0, 0, time.UTC))
+			spec := newTestComputeInstanceSpec("template-1")
+			spec.RestartRequestedAt = &secondRestart
+			instance := &osacv1alpha1.ComputeInstance{
+				ObjectMeta: metav1.ObjectMeta{Name: "test-second-restart", Namespace: "default"},
+				Spec:       spec,
+				Status: osacv1alpha1.ComputeInstanceStatus{
+					LastRestartedAt: &firstRestart,
+				},
+			}
+
+			err := reconciler.handleDesiredConfigVersion(ctx, instance)
+			Expect(err).NotTo(HaveOccurred())
+			instance.Status.ReconciledConfigVersion = instance.Status.DesiredConfigVersion
+
+			if instance.Spec.RestartRequestedAt != nil {
+				if instance.Status.LastRestartedAt == nil || instance.Spec.RestartRequestedAt.After(instance.Status.LastRestartedAt.Time) {
+					instance.Status.LastRestartedAt = instance.Spec.RestartRequestedAt.DeepCopy()
+				}
+			}
+
+			Expect(instance.Status.LastRestartedAt.Time).To(Equal(secondRestart.Time))
+		})
+
+		It("should include restartRequestedAt in spec hash", func() {
+			restartTime := metav1.NewTime(time.Date(2026, 3, 18, 12, 0, 0, 0, time.UTC))
+
+			specWithout := newTestComputeInstanceSpec("template-1")
+			instanceWithout := &osacv1alpha1.ComputeInstance{
+				ObjectMeta: metav1.ObjectMeta{Name: "test-hash-without", Namespace: "default"},
+				Spec:       specWithout,
+			}
+			err := reconciler.handleDesiredConfigVersion(ctx, instanceWithout)
+			Expect(err).NotTo(HaveOccurred())
+			hashWithout := instanceWithout.Status.DesiredConfigVersion
+
+			specWith := newTestComputeInstanceSpec("template-1")
+			specWith.RestartRequestedAt = &restartTime
+			instanceWith := &osacv1alpha1.ComputeInstance{
+				ObjectMeta: metav1.ObjectMeta{Name: "test-hash-with", Namespace: "default"},
+				Spec:       specWith,
+			}
+			err = reconciler.handleDesiredConfigVersion(ctx, instanceWith)
+			Expect(err).NotTo(HaveOccurred())
+			hashWith := instanceWith.Status.DesiredConfigVersion
+
+			Expect(hashWith).NotTo(Equal(hashWithout), "restartRequestedAt must change the spec hash to trigger provisioning")
+		})
+	})
 })

@@ -673,11 +673,6 @@ func (r *ComputeInstanceReconciler) handleUpdate(ctx context.Context, _ reconcil
 		instance.SetStatusCondition(v1alpha1.ComputeInstanceConditionRestartRequired, metav1.ConditionFalse, "", v1alpha1.ReasonAsExpected)
 	}
 
-	// Handle restart request (VMI is on target cluster)
-	if result, err := r.handleRestartRequest(ctx, instance, targetClient); err != nil || (result.RequeueAfter > 0) {
-		return result, err
-	}
-
 	if err := r.handleDesiredConfigVersion(ctx, instance); err != nil {
 		return ctrl.Result{}, err
 	}
@@ -707,20 +702,38 @@ func (r *ComputeInstanceReconciler) handleUpdate(ctx context.Context, _ reconcil
 		// Phase is now driven by KubeVirt PrintableStatus, set above. Only update the condition.
 		instance.SetStatusCondition(v1alpha1.ComputeInstanceConditionConfigurationApplied, metav1.ConditionTrue, "", v1alpha1.ReasonAsExpected)
 
-		// If we're tracking a provision job that hasn't reached terminal state, continue polling
-		// This ensures job status fields are accurate and reflect the final job outcome
-		latestProvisionJob := v1alpha1.FindLatestJobByType(instance.Status.Jobs, v1alpha1.JobTypeProvision)
-		if r.ProvisioningProvider != nil && latestProvisionJob != nil {
-			if !latestProvisionJob.State.IsTerminal() {
-				log.Info("VM ready but provision job not terminal, continuing to poll", "jobID", latestProvisionJob.JobID, "state", latestProvisionJob.State)
-				return r.handleProvisioning(ctx, instance)
+		// Update lastRestartedAt when a restart was requested and provisioning has reconciled it.
+		if instance.Spec.RestartRequestedAt != nil {
+			if instance.Status.LastRestartedAt == nil || instance.Spec.RestartRequestedAt.After(instance.Status.LastRestartedAt.Time) {
+				log.Info("restart completed via provisioning", "restartRequestedAt", instance.Spec.RestartRequestedAt)
+				instance.Status.LastRestartedAt = instance.Spec.RestartRequestedAt.DeepCopy()
+				instance.SetStatusCondition(v1alpha1.ComputeInstanceConditionRestartInProgress, metav1.ConditionFalse, "", v1alpha1.ReasonAsExpected)
 			}
+		}
+
+		// If we're tracking a provision job that hasn't reached terminal state, mark it as
+		// succeeded since config versions match — that's proof the provision completed.
+		// This is essential for EDA where GetProvisionStatus() always returns Unknown.
+		latestProvisionJob := v1alpha1.FindLatestJobByType(instance.Status.Jobs, v1alpha1.JobTypeProvision)
+		if latestProvisionJob != nil && !latestProvisionJob.State.IsTerminal() {
+			log.Info("marking provision job as succeeded (config versions match)", "jobID", latestProvisionJob.JobID, "previousState", latestProvisionJob.State)
+			latestProvisionJob.State = v1alpha1.JobStateSucceeded
+			latestProvisionJob.Message = "provision completed (config versions match)"
 		}
 
 		return ctrl.Result{}, nil
 	}
 
 	instance.SetStatusCondition(v1alpha1.ComputeInstanceConditionConfigurationApplied, metav1.ConditionFalse, "Applying configuration", v1alpha1.ReasonAsExpected)
+
+	// Set RestartInProgress condition when a restart is pending provisioning.
+	if instance.Spec.RestartRequestedAt != nil {
+		if instance.Status.LastRestartedAt == nil || instance.Spec.RestartRequestedAt.After(instance.Status.LastRestartedAt.Time) {
+			instance.SetStatusCondition(v1alpha1.ComputeInstanceConditionRestartInProgress, metav1.ConditionTrue,
+				fmt.Sprintf("Restart initiated at %s", instance.Spec.RestartRequestedAt.UTC().Format(time.RFC3339)),
+				"RestartInProgress")
+		}
+	}
 
 	// Handle provisioning via provider abstraction
 	return r.handleProvisioning(ctx, instance)
