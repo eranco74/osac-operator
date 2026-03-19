@@ -20,6 +20,13 @@ import (
 	"fmt"
 )
 
+const (
+	// defaultStorageClassSentinel is the label value that marks a shared StorageClass
+	// available to all tenants. No Tenant CR can be named "Default" because uppercase
+	// is forbidden in Kubernetes resource names.
+	defaultStorageClassSentinel = "Default"
+)
+
 var (
 	// osacTenantRefLabel the label used to reference the tenant object
 	osacTenantRefLabel string = fmt.Sprintf("%s/tenant-ref", osacPrefix)
