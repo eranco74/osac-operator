@@ -92,7 +92,7 @@ func (p *controllableProvider) TriggerDeprovision(ctx context.Context, resource 
 	}
 
 	// Check if provision job needs to be terminated first (AAP behavior)
-	jobs, _ := provisioning.GetJobsFromResource(resource)
+	jobs := provisioning.GetJobsFromResource(resource)
 	latestProvisionJob := osacv1alpha1.FindLatestJobByType(jobs, osacv1alpha1.JobTypeProvision)
 	if latestProvisionJob != nil {
 		if !p.provisionJobState.IsTerminal() {

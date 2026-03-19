@@ -279,6 +279,12 @@ func (r *HostPoolReconciler) handleUpdate(ctx context.Context, req reconcile.Req
 		} else if !latestProvisionJob.State.IsTerminal() {
 			instance.SetCondition(v1alpha1.HostPoolConditionProgressing, metav1.ConditionTrue, "ProvisionJobRunning", fmt.Sprintf("Provision job %s is %s", latestProvisionJob.JobID, latestProvisionJob.State))
 		}
+	} else if instance.Status.DesiredConfigVersion == instance.Status.ReconciledConfigVersion {
+		// No provision job and config is up to date — resource is ready
+		instance.SetCondition(v1alpha1.HostPoolConditionProgressing, metav1.ConditionFalse, "HostPoolReady", "HostPool is ready")
+		instance.SetCondition(v1alpha1.HostPoolConditionAvailable, metav1.ConditionTrue, "HostPoolAvailable", "HostPool is available")
+		instance.Status.Phase = v1alpha1.HostPoolPhaseReady
+		instance.Status.HostSets = instance.Spec.HostSets
 	}
 
 	if provisionResult.RequeueAfter > 0 {

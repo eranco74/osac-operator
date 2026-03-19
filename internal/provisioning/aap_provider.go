@@ -81,17 +81,18 @@ func (p *AAPProvider) resolveTemplateName(action string, resource client.Object)
 	return "", fmt.Errorf("%s template not configured", action)
 }
 
-// GetJobsFromResource extracts the jobs array from any supported resource type.
-func GetJobsFromResource(resource client.Object) ([]v1alpha1.JobStatus, error) {
+// GetJobsFromResource extracts the jobs array from a resource.
+// Returns an empty slice for resource types that don't track jobs.
+func GetJobsFromResource(resource client.Object) []v1alpha1.JobStatus {
 	switch r := resource.(type) {
 	case *v1alpha1.ComputeInstance:
-		return r.Status.Jobs, nil
+		return r.Status.Jobs
 	case *v1alpha1.ClusterOrder:
-		return r.Status.Jobs, nil
+		return r.Status.Jobs
 	case *v1alpha1.HostPool:
-		return r.Status.Jobs, nil
+		return r.Status.Jobs
 	default:
-		return nil, fmt.Errorf("unsupported resource type: %T", resource)
+		return nil
 	}
 }
 
@@ -217,11 +218,7 @@ func (p *AAPProvider) TriggerDeprovision(ctx context.Context, resource client.Ob
 func (p *AAPProvider) isReadyForDeprovision(ctx context.Context, resource client.Object) (bool, *ProvisionStatus, error) {
 	log := ctrllog.FromContext(ctx)
 
-	// Get jobs from resource
-	jobs, err := GetJobsFromResource(resource)
-	if err != nil {
-		return false, nil, err
-	}
+	jobs := GetJobsFromResource(resource)
 
 	// Find latest provision job
 	latestProvisionJob := v1alpha1.FindLatestJobByType(jobs, v1alpha1.JobTypeProvision)

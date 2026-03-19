@@ -120,10 +120,7 @@ func (p *EDAProvider) TriggerProvision(ctx context.Context, resource client.Obje
 	}
 
 	// Generate unique job ID
-	jobs, err := GetJobsFromResource(resource)
-	if err != nil {
-		return nil, err
-	}
+	jobs := GetJobsFromResource(resource)
 	jobID := generateEDAJobID(jobs)
 
 	return &ProvisionResult{
@@ -185,10 +182,7 @@ func (p *EDAProvider) TriggerDeprovision(ctx context.Context, resource client.Ob
 	}
 
 	// Generate unique job ID
-	jobs, err := GetJobsFromResource(resource)
-	if err != nil {
-		return nil, err
-	}
+	jobs := GetJobsFromResource(resource)
 	jobID := generateEDAJobID(jobs)
 
 	return &DeprovisionResult{
