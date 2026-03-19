@@ -34,19 +34,42 @@ const (
 	TenantPhaseReady       TenantPhaseType = "Ready"
 )
 
+// TenantConditionType is a valid value for .status.conditions.type
+type TenantConditionType string
+
+const (
+	// TenantConditionNamespaceReady indicates whether the tenant namespace
+	// exists on the target cluster.
+	TenantConditionNamespaceReady TenantConditionType = "NamespaceReady"
+
+	// TenantConditionStorageClassReady indicates whether a valid StorageClass
+	// has been found for the tenant (tenant-specific or shared Default).
+	TenantConditionStorageClassReady TenantConditionType = "StorageClassReady"
+)
+
+// Reason constants for Tenant conditions
+const (
+	TenantReasonFound                 = "Found"
+	TenantReasonNotFound              = "NotFound"
+	TenantReasonSharedDefault         = "SharedDefault"
+	TenantReasonMultipleFound         = "MultipleFound"
+	TenantReasonMultipleDefaultsFound = "MultipleDefaultsFound"
+)
+
 // TenantStatus defines the observed state of Tenant.
 type TenantStatus struct {
-	// INSERT ADDITIONAL STATUS FIELD - define observed state of cluster
-	// Important: Run "make" to regenerate code after modifying this file
-
 	// Phase is the phase of the tenant
 	Phase TenantPhaseType `json:"phase,omitempty"`
 
-	// Namespace is the namespace allocated to the tenant
+	// Namespace is the namespace allocated to the tenant on the target cluster
 	Namespace string `json:"namespace,omitempty"`
 
 	// StorageClass is the StorageClass allocated to the tenant on the target cluster
 	StorageClass string `json:"storageClass,omitempty"`
+
+	// Conditions holds an array of metav1.Condition that describe the state of the Tenant
+	// +kubebuilder:validation:Optional
+	Conditions []metav1.Condition `json:"conditions,omitempty" patchStrategy:"merge" patchMergeKey:"type" protobuf:"bytes,1,rep,name=conditions"`
 }
 
 // +kubebuilder:object:root=true

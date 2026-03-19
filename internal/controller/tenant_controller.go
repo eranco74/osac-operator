@@ -18,6 +18,7 @@ package controller
 
 import (
 	"context"
+	"fmt"
 
 	ovnv1 "github.com/ovn-org/ovn-kubernetes/go-controller/pkg/crd/userdefinednetwork/v1"
 	corev1 "k8s.io/api/core/v1"
@@ -117,53 +118,128 @@ func (r *TenantReconciler) handleUpdate(ctx context.Context, req reconcile.Reque
 	// Prerequisite 1: namespace must exist on the target cluster
 	var namespace corev1.Namespace
 	if err = targetClient.Get(ctx, client.ObjectKey{Name: instance.GetName()}, &namespace); err != nil {
+		instance.SetStatusCondition(v1alpha1.TenantConditionNamespaceReady,
+			metav1.ConditionFalse,
+			v1alpha1.TenantReasonNotFound,
+			fmt.Sprintf("Namespace %q not found on target cluster", instance.GetName()))
+		instance.SetStatusCondition(v1alpha1.TenantConditionStorageClassReady,
+			metav1.ConditionFalse,
+			v1alpha1.TenantReasonNotFound,
+			"Cannot evaluate StorageClass: namespace not ready")
 		return ctrl.Result{}, err
 	}
 
-	// Prerequisite 2: exactly one StorageClass labeled osac.openshift.io/tenant=<name> must exist
-	storageClassName, err := r.getTenantStorageClass(ctx, targetClient, instance.GetName())
+	instance.SetStatusCondition(v1alpha1.TenantConditionNamespaceReady,
+		metav1.ConditionTrue,
+		v1alpha1.TenantReasonFound,
+		fmt.Sprintf("Namespace %q found on target cluster", instance.GetName()))
+
+	// Prerequisite 2: valid StorageClass (tenant-specific or shared Default)
+	scResult, err := r.getTenantStorageClass(ctx, targetClient, instance.GetName())
 	if err != nil {
 		return ctrl.Result{}, err
 	}
-	if storageClassName == "" {
-		// No matching StorageClass yet; stay Progressing and wait for Watch event
+
+	if scResult.name == "" {
+		instance.SetStatusCondition(v1alpha1.TenantConditionStorageClassReady,
+			metav1.ConditionFalse,
+			scResult.reason,
+			scResult.message)
 		return ctrl.Result{}, nil
 	}
 
+	instance.SetStatusCondition(v1alpha1.TenantConditionStorageClassReady,
+		metav1.ConditionTrue,
+		scResult.reason,
+		scResult.message)
+
 	instance.Status.Namespace = namespace.GetName()
-	instance.Status.StorageClass = storageClassName
+	instance.Status.StorageClass = scResult.name
 	instance.Status.Phase = v1alpha1.TenantPhaseReady
 
 	return ctrl.Result{}, nil
 }
 
-// getTenantStorageClass returns the name of the single StorageClass on the target cluster that
-// carries the label osac.openshift.io/tenant=<tenantName>. It returns an empty string (not an
-// error) when zero StorageClasses are found, so the caller can remain in Progressing without
-// polluting the error log. A non-nil error is only returned for API call failures.
-func (r *TenantReconciler) getTenantStorageClass(ctx context.Context, targetClient client.Client, tenantName string) (string, error) {
+// storageClassResult holds the outcome of a StorageClass lookup, including
+// the resolved name (empty if none found) and the reason/message for the
+// condition that should be set on the Tenant.
+type storageClassResult struct {
+	name    string
+	reason  string
+	message string
+}
+
+// getTenantStorageClass looks up the StorageClass for a tenant using a two-step
+// fallback: tenant-specific SC first, then shared Default SC. Returns a
+// storageClassResult with the resolved name and condition metadata. A non-nil
+// error is only returned for API call failures.
+func (r *TenantReconciler) getTenantStorageClass(ctx context.Context, targetClient client.Client, tenantName string) (storageClassResult, error) {
 	log := ctrllog.FromContext(ctx)
 
-	storageClassList := &storagev1.StorageClassList{}
-	if err := targetClient.List(ctx, storageClassList, client.MatchingLabels{osacTenantAnnotation: tenantName}); err != nil {
-		return "", err
+	tenantSCList := &storagev1.StorageClassList{}
+	if err := targetClient.List(ctx, tenantSCList, client.MatchingLabels{osacTenantAnnotation: tenantName}); err != nil {
+		return storageClassResult{}, err
 	}
 
-	switch len(storageClassList.Items) {
-	case 0:
-		log.Info("no StorageClass found for tenant, staying Progressing", "tenant", tenantName)
-		return "", nil
+	switch len(tenantSCList.Items) {
 	case 1:
-		return storageClassList.Items[0].GetName(), nil
+		scName := tenantSCList.Items[0].GetName()
+		return storageClassResult{
+			name:    scName,
+			reason:  v1alpha1.TenantReasonFound,
+			message: fmt.Sprintf("StorageClass %q found for tenant %q", scName, tenantName),
+		}, nil
+	case 0:
+		// fall through to Default lookup below
 	default:
-		log.Info("multiple StorageClasses found for tenant, staying Progressing",
-			"tenant", tenantName, "count", len(storageClassList.Items))
-		return "", nil
+		msg := fmt.Sprintf("Multiple StorageClasses (%d) found for tenant %q; exactly one required",
+			len(tenantSCList.Items), tenantName)
+		log.Info(msg)
+		return storageClassResult{
+			reason:  v1alpha1.TenantReasonMultipleFound,
+			message: msg,
+		}, nil
+	}
+
+	defaultSCList := &storagev1.StorageClassList{}
+	if err := targetClient.List(ctx, defaultSCList, client.MatchingLabels{osacTenantAnnotation: defaultStorageClassSentinel}); err != nil {
+		return storageClassResult{}, err
+	}
+
+	switch len(defaultSCList.Items) {
+	case 1:
+		scName := defaultSCList.Items[0].GetName()
+		msg := fmt.Sprintf("No tenant-specific StorageClass found for tenant %q. "+
+			"Using shared Default StorageClass %q. Storage is not isolated for this tenant.",
+			tenantName, scName)
+		log.Info(msg)
+		return storageClassResult{
+			name:    scName,
+			reason:  v1alpha1.TenantReasonSharedDefault,
+			message: msg,
+		}, nil
+	case 0:
+		msg := fmt.Sprintf("No StorageClass found for tenant %q (no tenant SC, no Default SC)", tenantName)
+		log.Info(msg)
+		return storageClassResult{
+			reason:  v1alpha1.TenantReasonNotFound,
+			message: msg,
+		}, nil
+	default:
+		msg := fmt.Sprintf("Multiple shared Default StorageClasses (%d) found; exactly one required",
+			len(defaultSCList.Items))
+		log.Info(msg)
+		return storageClassResult{
+			reason:  v1alpha1.TenantReasonMultipleDefaultsFound,
+			message: msg,
+		}, nil
 	}
 }
 
-// mapStorageClassToTenant maps a StorageClass event to the Tenant named by the
-// osac.openshift.io/tenant label on the StorageClass.
+// mapStorageClassToTenant maps a StorageClass event to Tenant reconcile requests.
+// For tenant-specific SCs, it maps to the single named Tenant.
+// For shared Default SCs (osac.openshift.io/tenant=Default), it maps to ALL
+// Tenants since any tenant without a dedicated SC could be affected.
 func (r *TenantReconciler) mapStorageClassToTenant(ctx context.Context, obj client.Object) []reconcile.Request {
 	log := ctrllog.FromContext(ctx)
 
@@ -172,21 +248,46 @@ func (r *TenantReconciler) mapStorageClassToTenant(ctx context.Context, obj clie
 		return nil
 	}
 
+	if tenantName == defaultStorageClassSentinel {
+		log.Info("shared Default StorageClass changed, reconciling all tenants",
+			"storageClass", obj.GetName())
+		return r.allTenantReconcileRequests(ctx)
+	}
+
 	tenant := &v1alpha1.Tenant{}
 	err := r.Get(ctx, client.ObjectKey{Namespace: r.tenantNamespace, Name: tenantName}, tenant)
 	if err != nil {
 		if client.IgnoreNotFound(err) != nil {
-			log.Error(err, "unable to get Tenant for StorageClass", "storageClass", obj.GetName(), "tenant", tenantName)
+			log.Error(err, "unable to get Tenant for StorageClass",
+				"storageClass", obj.GetName(), "tenant", tenantName)
 		}
 		return nil
 	}
 
 	log.Info("mapping StorageClass to Tenant", "storageClass", obj.GetName(), "tenant", tenantName)
-	return []reconcile.Request{
-		{
-			NamespacedName: client.ObjectKeyFromObject(tenant),
-		},
+	return []reconcile.Request{{NamespacedName: client.ObjectKeyFromObject(tenant)}}
+}
+
+// allTenantReconcileRequests returns reconcile requests for every Tenant in the
+// tenant namespace. Used when a shared Default StorageClass is created or
+// deleted, since any tenant without a dedicated SC could be affected.
+func (r *TenantReconciler) allTenantReconcileRequests(ctx context.Context) []reconcile.Request {
+	log := ctrllog.FromContext(ctx)
+
+	tenantList := &v1alpha1.TenantList{}
+	if err := r.List(ctx, tenantList, client.InNamespace(r.tenantNamespace)); err != nil {
+		log.Error(err, "unable to list Tenants for Default SC reconciliation")
+		return nil
 	}
+
+	requests := make([]reconcile.Request, 0, len(tenantList.Items))
+	for i := range tenantList.Items {
+		requests = append(requests, reconcile.Request{
+			NamespacedName: client.ObjectKeyFromObject(&tenantList.Items[i]),
+		})
+	}
+	log.Info("enqueuing all tenants for reconciliation", "count", len(requests))
+	return requests
 }
 
 // mapObjectToTenant maps an event for a watched UDN to the associated Tenant resource.
