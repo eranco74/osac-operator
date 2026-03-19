@@ -665,7 +665,7 @@ var _ = Describe("ComputeInstanceFeedbackReconciler", func() {
 			computeInstance.Status.Conditions = append(computeInstance.Status.Conditions, metav1.Condition{
 				Type:               string(osacv1alpha1.ComputeInstanceConditionRestartInProgress),
 				Status:             metav1.ConditionTrue,
-				Reason:             ReasonRestartInProgress,
+				Reason:             "RestartInProgress",
 				Message:            restartInProgressMessage,
 				LastTransitionTime: metav1.NewTime(time.Now().UTC()),
 			})
@@ -700,7 +700,7 @@ var _ = Describe("ComputeInstanceFeedbackReconciler", func() {
 			computeInstance.Status.Conditions = append(computeInstance.Status.Conditions, metav1.Condition{
 				Type:               string(osacv1alpha1.ComputeInstanceConditionRestartFailed),
 				Status:             metav1.ConditionTrue,
-				Reason:             ReasonNoVMReference,
+				Reason:             "NoVMReference",
 				Message:            restartFailedMessage,
 				LastTransitionTime: metav1.NewTime(time.Now().UTC()),
 			})
