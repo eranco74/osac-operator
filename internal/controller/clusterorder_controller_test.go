@@ -198,7 +198,7 @@ var _ = Describe("ClusterOrder Controller", func() {
 			Expect(job).NotTo(BeNil())
 		})
 
-		It("should skip when job failed but config versions match", func() {
+		It("should skip when job failed without ConfigVersion and reconciled matches desired", func() {
 			instance := &v1alpha1.ClusterOrder{
 				Status: v1alpha1.ClusterOrderStatus{
 					DesiredConfigVersion:    "abc123",

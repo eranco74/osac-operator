@@ -385,15 +385,9 @@ func (r *HostPoolReconciler) handleProvisioning(ctx context.Context, instance *v
 	case provisionTrigger:
 		return r.triggerProvisionJob(ctx, instance)
 	case provisionBackoff:
-		backoff := computeBackoffFromJobs(instance.Status.Jobs, instance.Status.DesiredConfigVersion)
-		elapsed := time.Since(latestProvisionJob.Timestamp.Time)
-		if elapsed >= backoff {
-			log.Info("backoff elapsed, retrying provision", "backoff", backoff, "elapsed", elapsed)
+		return handleProvisionBackoff(ctx, instance.Status.Jobs, instance.Status.DesiredConfigVersion, latestProvisionJob, func() (ctrl.Result, error) {
 			return r.triggerProvisionJob(ctx, instance)
-		}
-		remaining := backoff - elapsed
-		log.Info("provision failed, backing off", "backoff", backoff, "remaining", remaining)
-		return ctrl.Result{RequeueAfter: remaining}, nil
+		})
 	default: // provisionPoll
 		return r.pollProvisionJob(ctx, log, instance, latestProvisionJob)
 	}
