@@ -47,7 +47,7 @@ const (
 func handleProvisionBackoff(ctx context.Context, jobs []v1alpha1.JobStatus, configVersion string, latestJob *v1alpha1.JobStatus, triggerFn func() (ctrl.Result, error)) (ctrl.Result, error) {
 	log := ctrllog.FromContext(ctx)
 	backoff := computeBackoffFromJobs(jobs, configVersion)
-	elapsed := time.Now().UTC().Sub(latestJob.Timestamp.Time.UTC())
+	elapsed := time.Since(latestJob.Timestamp.Time)
 	if elapsed >= backoff {
 		log.Info("backoff elapsed, retrying provision", "jobID", latestJob.JobID, "backoff", backoff, "elapsed", elapsed)
 		return triggerFn()
@@ -81,10 +81,7 @@ func computeBackoffFromJobs(jobs []v1alpha1.JobStatus, configVersion string) tim
 		}
 	}
 
-	if last == nil {
-		return backoffBaseDelay
-	}
-	if prev == nil {
+	if last == nil || prev == nil {
 		return backoffBaseDelay
 	}
 
