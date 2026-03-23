@@ -393,9 +393,9 @@ func (r *HostPoolReconciler) handleProvisioning(ctx context.Context, instance *v
 	case provisionBackoff:
 		return handleProvisionBackoff(ctx, *provState.Jobs, provState.DesiredConfigVersion, latestProvisionJob, trigger)
 	default: // provisionPoll
-		return pollProvision(ctx, r.ProvisioningProvider, instance, provState, latestProvisionJob, r.StatusPollInterval, func() {
+		return pollProvision(ctx, r.ProvisioningProvider, instance, provState, latestProvisionJob, r.StatusPollInterval, func(message string) {
 			instance.SetCondition(v1alpha1.HostPoolConditionProgressing, metav1.ConditionFalse, "ProvisionJobFailed",
-				fmt.Sprintf("Provision job %s failed", latestProvisionJob.JobID))
+				fmt.Sprintf("Provision job %s failed: %s", latestProvisionJob.JobID, message))
 			instance.Status.Phase = v1alpha1.HostPoolPhaseFailed
 		})
 	}

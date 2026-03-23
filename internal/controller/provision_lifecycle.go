@@ -115,7 +115,7 @@ func triggerProvision(ctx context.Context, provider provisioning.ProvisioningPro
 
 // pollProvision checks the status of an existing provision job and updates the jobs slice in place.
 // onFailed is called when the job transitions to Failed state (e.g. to set the resource phase).
-func pollProvision(ctx context.Context, provider provisioning.ProvisioningProvider, resource client.Object, provState *provisionState, latestJob *v1alpha1.JobStatus, pollInterval time.Duration, onFailed func()) (ctrl.Result, error) {
+func pollProvision(ctx context.Context, provider provisioning.ProvisioningProvider, resource client.Object, provState *provisionState, latestJob *v1alpha1.JobStatus, pollInterval time.Duration, onFailed func(message string)) (ctrl.Result, error) {
 	log := ctrllog.FromContext(ctx)
 	log.Info("polling provision job status", "jobID", latestJob.JobID, "currentState", latestJob.State)
 
@@ -135,7 +135,7 @@ func pollProvision(ctx context.Context, provider provisioning.ProvisioningProvid
 		if status.State == v1alpha1.JobStateFailed {
 			log.Info("provision job failed", "jobID", latestJob.JobID)
 			if onFailed != nil {
-				onFailed()
+				onFailed(status.Message)
 			}
 		}
 	}
