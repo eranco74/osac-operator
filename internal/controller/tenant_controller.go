@@ -27,7 +27,7 @@ import (
 	"k8s.io/apimachinery/pkg/api/equality"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
-	"k8s.io/client-go/tools/record"
+	"k8s.io/client-go/tools/events"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	ctrllog "sigs.k8s.io/controller-runtime/pkg/log"
@@ -45,7 +45,7 @@ import (
 type TenantReconciler struct {
 	client.Client
 	Scheme          *runtime.Scheme
-	Recorder        record.EventRecorder
+	Recorder        events.EventRecorder
 	tenantNamespace string
 	mgr             mcmanager.Manager
 	targetCluster   string
@@ -63,7 +63,7 @@ func NewTenantReconciler(mgr mcmanager.Manager, tenantNamespace string, targetCl
 	return &TenantReconciler{
 		Client:          mgr.GetLocalManager().GetClient(),
 		Scheme:          mgr.GetLocalManager().GetScheme(),
-		Recorder:        mgr.GetLocalManager().GetEventRecorderFor("tenant-controller"),
+		Recorder:        mgr.GetLocalManager().GetEventRecorder("tenant-controller"),
 		tenantNamespace: tenantNamespace,
 		mgr:             mgr,
 		targetCluster:   targetCluster,
@@ -151,7 +151,7 @@ func (r *TenantReconciler) handleUpdate(ctx context.Context, req reconcile.Reque
 			scResult.reason,
 			scResult.message)
 		if scResult.reason == v1alpha1.TenantReasonMultipleFound || scResult.reason == v1alpha1.TenantReasonMultipleDefaultsFound {
-			r.Recorder.Event(instance, corev1.EventTypeWarning, "DuplicateStorageClass", scResult.message)
+			r.Recorder.Eventf(instance, nil, corev1.EventTypeWarning, "DuplicateStorageClass", "DetectDuplicate", scResult.message)
 		}
 		return ctrl.Result{}, nil
 	}
