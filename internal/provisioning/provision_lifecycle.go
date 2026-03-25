@@ -30,7 +30,6 @@ import (
 	ctrllog "sigs.k8s.io/controller-runtime/pkg/log"
 
 	v1alpha1 "github.com/osac-project/osac-operator/api/v1alpha1"
-	"github.com/osac-project/osac-operator/internal/helpers"
 )
 
 // State points into the resource's status fields used by the provisioning lifecycle.
@@ -60,7 +59,7 @@ func GetJobsFromResource(resource client.Object) []v1alpha1.JobStatus {
 
 // EvaluateAction determines the next provisioning action based on job history and config versions.
 func EvaluateAction(provState *State, checkAPIServer func() bool) (Action, *v1alpha1.JobStatus) {
-	latestJob := v1alpha1.FindLatestJobByType(*provState.Jobs, v1alpha1.JobTypeProvision)
+	latestJob := FindLatestJobByType(*provState.Jobs, v1alpha1.JobTypeProvision)
 
 	if !HasJobID(latestJob) {
 		if provState.DesiredConfigVersion == provState.ReconciledConfigVersion {
@@ -93,7 +92,7 @@ func CheckAPIServerForNonTerminalProvisionJob(ctx context.Context, apiReader cli
 		return false
 	}
 	freshJobs := GetJobsFromResource(fresh)
-	freshJob := v1alpha1.FindLatestJobByType(freshJobs, v1alpha1.JobTypeProvision)
+	freshJob := FindLatestJobByType(freshJobs, v1alpha1.JobTypeProvision)
 	if HasJobID(freshJob) && !freshJob.State.IsTerminal() {
 		log.Info("skipping provision trigger: non-terminal job found via API server", "jobID", freshJob.JobID, "state", freshJob.State)
 		return true
@@ -115,7 +114,7 @@ func TriggerJob(ctx context.Context, provider ProvisioningProvider, resource cli
 		return ctrl.Result{}, fmt.Errorf("failed to trigger provision: %w", err)
 	}
 
-	*provState.Jobs = helpers.AppendJob(*provState.Jobs, v1alpha1.JobStatus{
+	*provState.Jobs = AppendJob(*provState.Jobs, v1alpha1.JobStatus{
 		JobID:         result.JobID,
 		Type:          v1alpha1.JobTypeProvision,
 		State:         result.InitialState,
@@ -124,7 +123,7 @@ func TriggerJob(ctx context.Context, provider ProvisioningProvider, resource cli
 		ConfigVersion: provState.DesiredConfigVersion,
 	}, maxHistory)
 
-	latestJob := v1alpha1.FindLatestJobByType(*provState.Jobs, v1alpha1.JobTypeProvision)
+	latestJob := FindLatestJobByType(*provState.Jobs, v1alpha1.JobTypeProvision)
 	log.Info("provision job triggered", "jobID", latestJob.JobID, "configVersion", latestJob.ConfigVersion)
 	return ctrl.Result{RequeueAfter: pollInterval}, nil
 }
@@ -147,7 +146,7 @@ func PollJob(ctx context.Context, provider ProvisioningProvider, resource client
 		log.Error(err, "failed to get provision status", "jobID", latestJob.JobID)
 		updatedJob := *latestJob
 		updatedJob.Message = fmt.Sprintf("Failed to get job status: %v", err)
-		helpers.UpdateJob(*provState.Jobs, updatedJob)
+		UpdateJob(*provState.Jobs, updatedJob)
 		return ctrl.Result{RequeueAfter: pollInterval}, nil
 	}
 
@@ -159,7 +158,7 @@ func PollJob(ctx context.Context, provider ProvisioningProvider, resource client
 		if status.ErrorDetails != "" {
 			updatedJob.Message = fmt.Sprintf("%s: %s", status.Message, status.ErrorDetails)
 		}
-		helpers.UpdateJob(*provState.Jobs, updatedJob)
+		UpdateJob(*provState.Jobs, updatedJob)
 
 		if status.State == v1alpha1.JobStateFailed {
 			log.Info("provision job failed", "jobID", latestJob.JobID)

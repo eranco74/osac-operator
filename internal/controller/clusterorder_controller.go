@@ -40,7 +40,6 @@ import (
 	mcmanager "sigs.k8s.io/multicluster-runtime/pkg/manager"
 
 	"github.com/osac-project/osac-operator/api/v1alpha1"
-	"github.com/osac-project/osac-operator/internal/helpers"
 	"github.com/osac-project/osac-operator/internal/provisioning"
 )
 
@@ -599,7 +598,7 @@ func (r *ClusterOrderReconciler) handleDeprovisioning(ctx context.Context, insta
 	}
 
 	// Check if deprovision job already exists
-	latestDeprovisionJob := v1alpha1.FindLatestJobByType(instance.Status.Jobs, v1alpha1.JobTypeDeprovision)
+	latestDeprovisionJob := provisioning.FindLatestJobByType(instance.Status.Jobs, v1alpha1.JobTypeDeprovision)
 
 	// If no deprovision job exists, trigger one
 	if latestDeprovisionJob == nil {
@@ -623,12 +622,12 @@ func (r *ClusterOrderReconciler) handleDeprovisioning(ctx context.Context, insta
 			log.Info("waiting for provision job to terminate before deprovisioning")
 			// Update provision job status if provided
 			if result.ProvisionJobStatus != nil {
-				latestProvisionJob := v1alpha1.FindLatestJobByType(instance.Status.Jobs, v1alpha1.JobTypeProvision)
+				latestProvisionJob := provisioning.FindLatestJobByType(instance.Status.Jobs, v1alpha1.JobTypeProvision)
 				if latestProvisionJob != nil {
 					updatedJob := *latestProvisionJob
 					updatedJob.State = result.ProvisionJobStatus.State
 					updatedJob.Message = result.ProvisionJobStatus.Message
-					helpers.UpdateJob(instance.Status.Jobs, updatedJob)
+					provisioning.UpdateJob(instance.Status.Jobs, updatedJob)
 				}
 			}
 			return ctrl.Result{RequeueAfter: r.StatusPollInterval}, nil
@@ -637,16 +636,16 @@ func (r *ClusterOrderReconciler) handleDeprovisioning(ctx context.Context, insta
 			log.Info("deprovision job triggered", "jobID", result.JobID)
 			// Update provision job status if provided
 			if result.ProvisionJobStatus != nil {
-				latestProvisionJob := v1alpha1.FindLatestJobByType(instance.Status.Jobs, v1alpha1.JobTypeProvision)
+				latestProvisionJob := provisioning.FindLatestJobByType(instance.Status.Jobs, v1alpha1.JobTypeProvision)
 				if latestProvisionJob != nil {
 					updatedJob := *latestProvisionJob
 					updatedJob.State = result.ProvisionJobStatus.State
 					updatedJob.Message = result.ProvisionJobStatus.Message
-					helpers.UpdateJob(instance.Status.Jobs, updatedJob)
+					provisioning.UpdateJob(instance.Status.Jobs, updatedJob)
 				}
 			}
 			// Append deprovision job
-			instance.Status.Jobs = helpers.AppendJob(instance.Status.Jobs, v1alpha1.JobStatus{
+			instance.Status.Jobs = provisioning.AppendJob(instance.Status.Jobs, v1alpha1.JobStatus{
 				JobID:                  result.JobID,
 				Type:                   v1alpha1.JobTypeDeprovision,
 				State:                  v1alpha1.JobStatePending,
@@ -677,7 +676,7 @@ func (r *ClusterOrderReconciler) handleDeprovisioning(ctx context.Context, insta
 			updatedJob := *latestDeprovisionJob
 			updatedJob.State = status.State
 			updatedJob.Message = status.Message
-			helpers.UpdateJob(instance.Status.Jobs, updatedJob)
+			provisioning.UpdateJob(instance.Status.Jobs, updatedJob)
 		}
 
 		// Continue polling if still running

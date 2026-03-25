@@ -1,5 +1,4 @@
-// Package helpers contains small utility methods that don't belong anywhere else.
-package helpers
+package provisioning
 
 import (
 	"github.com/osac-project/osac-operator/api/v1alpha1"
@@ -51,4 +50,18 @@ func NeedsProvisionJob(latestJob *v1alpha1.JobStatus) bool {
 
 	// Trigger new job if previous job failed (retry logic)
 	return !latestJob.State.IsSuccessful()
+}
+
+// FindLatestJobByType finds the most recent job of the specified type by timestamp.
+// Returns nil if no job of that type exists.
+func FindLatestJobByType(jobs []v1alpha1.JobStatus, jobType v1alpha1.JobType) *v1alpha1.JobStatus {
+	var latest *v1alpha1.JobStatus
+	for i := range jobs {
+		if jobs[i].Type == jobType {
+			if latest == nil || jobs[i].Timestamp.After(latest.Timestamp.Time) {
+				latest = &jobs[i]
+			}
+		}
+	}
+	return latest
 }

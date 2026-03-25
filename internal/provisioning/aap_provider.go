@@ -206,7 +206,7 @@ func (p *AAPProvider) isReadyForDeprovision(ctx context.Context, resource client
 	jobs := GetJobsFromResource(resource)
 
 	// Find latest provision job
-	latestProvisionJob := v1alpha1.FindLatestJobByType(jobs, v1alpha1.JobTypeProvision)
+	latestProvisionJob := FindLatestJobByType(jobs, v1alpha1.JobTypeProvision)
 
 	// No provision job - ready to proceed
 	if latestProvisionJob == nil {
@@ -246,7 +246,7 @@ func (p *AAPProvider) isReadyForDeprovision(ctx context.Context, resource client
 			return false, nil, err
 		} else if deleting {
 			// Check if deprovision job exists
-			latestDeprovisionJob := v1alpha1.FindLatestJobByType(jobs, v1alpha1.JobTypeDeprovision)
+			latestDeprovisionJob := FindLatestJobByType(jobs, v1alpha1.JobTypeDeprovision)
 			if latestDeprovisionJob == nil {
 				// No deprovision job yet - this is the initial deletion, ready to create deprovision job
 				log.Info("EDA provision complete, deletion initiated, ready to create deprovision job", "jobID", latestProvisionJob.JobID, "phase", phase)

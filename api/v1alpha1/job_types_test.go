@@ -8,6 +8,8 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	"github.com/osac-project/osac-operator/api/v1alpha1"
+
+	"github.com/osac-project/osac-operator/internal/provisioning"
 )
 
 var _ = Describe("JobState", func() {
@@ -47,7 +49,7 @@ var _ = Describe("FindLatestJobByType", func() {
 
 	It("should return nil when jobs array is empty", func() {
 		jobs := []v1alpha1.JobStatus{}
-		result := v1alpha1.FindLatestJobByType(jobs, v1alpha1.JobTypeProvision)
+		result := provisioning.FindLatestJobByType(jobs, v1alpha1.JobTypeProvision)
 		Expect(result).To(BeNil())
 	})
 
@@ -60,7 +62,7 @@ var _ = Describe("FindLatestJobByType", func() {
 				State:     v1alpha1.JobStateRunning,
 			},
 		}
-		result := v1alpha1.FindLatestJobByType(jobs, v1alpha1.JobTypeProvision)
+		result := provisioning.FindLatestJobByType(jobs, v1alpha1.JobTypeProvision)
 		Expect(result).To(BeNil())
 	})
 
@@ -73,7 +75,7 @@ var _ = Describe("FindLatestJobByType", func() {
 				State:     v1alpha1.JobStateRunning,
 			},
 		}
-		result := v1alpha1.FindLatestJobByType(jobs, v1alpha1.JobTypeProvision)
+		result := provisioning.FindLatestJobByType(jobs, v1alpha1.JobTypeProvision)
 		Expect(result).NotTo(BeNil())
 		Expect(result.JobID).To(Equal("job1"))
 	})
@@ -99,7 +101,7 @@ var _ = Describe("FindLatestJobByType", func() {
 				State:     v1alpha1.JobStatePending,
 			},
 		}
-		result := v1alpha1.FindLatestJobByType(jobs, v1alpha1.JobTypeProvision)
+		result := provisioning.FindLatestJobByType(jobs, v1alpha1.JobTypeProvision)
 		Expect(result).NotTo(BeNil())
 		Expect(result.JobID).To(Equal("job3"))
 	})
@@ -126,7 +128,7 @@ var _ = Describe("FindLatestJobByType", func() {
 				State:     v1alpha1.JobStateRunning,
 			},
 		}
-		result := v1alpha1.FindLatestJobByType(jobs, v1alpha1.JobTypeProvision)
+		result := provisioning.FindLatestJobByType(jobs, v1alpha1.JobTypeProvision)
 		Expect(result).NotTo(BeNil())
 		Expect(result.JobID).To(Equal("job3"))
 	})
@@ -153,13 +155,13 @@ var _ = Describe("FindLatestJobByType", func() {
 			},
 		}
 		// Should find latest provision job, not latest overall
-		result := v1alpha1.FindLatestJobByType(jobs, v1alpha1.JobTypeProvision)
+		result := provisioning.FindLatestJobByType(jobs, v1alpha1.JobTypeProvision)
 		Expect(result).NotTo(BeNil())
 		Expect(result.JobID).To(Equal("provision2"))
 		Expect(result.Type).To(Equal(v1alpha1.JobTypeProvision))
 
 		// Should find latest deprovision job
-		result = v1alpha1.FindLatestJobByType(jobs, v1alpha1.JobTypeDeprovision)
+		result = provisioning.FindLatestJobByType(jobs, v1alpha1.JobTypeDeprovision)
 		Expect(result).NotTo(BeNil())
 		Expect(result.JobID).To(Equal("deprovision1"))
 		Expect(result.Type).To(Equal(v1alpha1.JobTypeDeprovision))
@@ -181,7 +183,7 @@ var _ = Describe("FindLatestJobByType", func() {
 				State:     v1alpha1.JobStateRunning,
 			},
 		}
-		result := v1alpha1.FindLatestJobByType(jobs, v1alpha1.JobTypeProvision)
+		result := provisioning.FindLatestJobByType(jobs, v1alpha1.JobTypeProvision)
 		Expect(result).NotTo(BeNil())
 		// When timestamps are equal, returns first one found
 		Expect(result.JobID).To(Equal("job1"))
