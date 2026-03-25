@@ -232,6 +232,112 @@ var _ = Describe("SecurityGroupReconciler", func() {
 			Expect(provisionTriggered).To(BeTrue())
 		})
 
+		It("should set implementation-strategy annotation from parent VirtualNetwork", func() {
+			key := types.NamespacedName{Name: sg.Name, Namespace: sg.Namespace}
+
+			mockProvider.triggerProvisionFunc = func(ctx context.Context, resource client.Object) (*provisioning.ProvisionResult, error) {
+				return &provisioning.ProvisionResult{
+					JobID:        "job-123",
+					InitialState: osacv1alpha1.JobStatePending,
+					Message:      "Job triggered",
+				}, nil
+			}
+
+			// Reconcile twice (first adds finalizer, second sets annotation and provisions)
+			_, err := reconciler.Reconcile(ctx, ctrl.Request{NamespacedName: key})
+			Expect(err).NotTo(HaveOccurred())
+			_, err = reconciler.Reconcile(ctx, ctrl.Request{NamespacedName: key})
+			Expect(err).NotTo(HaveOccurred())
+
+			// Fetch updated SecurityGroup
+			updated := &osacv1alpha1.SecurityGroup{}
+			Expect(fakeClient.Get(ctx, key, updated)).To(Succeed())
+
+			// Verify annotation was set to match parent VirtualNetwork's ImplementationStrategy
+			Expect(updated.Annotations).NotTo(BeNil())
+			Expect(updated.Annotations[osacImplementationStrategyAnnotation]).To(Equal("cudn-net"))
+		})
+
+		It("should not update when annotation already matches implementation strategy", func() {
+			// Create SecurityGroup with annotation already set
+			sgWithAnnotation := &osacv1alpha1.SecurityGroup{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "sg-with-annotation",
+					Namespace: "test-namespace",
+					Annotations: map[string]string{
+						osacImplementationStrategyAnnotation: "cudn-net",
+					},
+				},
+				Spec: osacv1alpha1.SecurityGroupSpec{
+					VirtualNetwork: "test-vnet-uuid",
+				},
+			}
+			Expect(fakeClient.Create(ctx, sgWithAnnotation)).To(Succeed())
+
+			key := types.NamespacedName{Name: sgWithAnnotation.Name, Namespace: sgWithAnnotation.Namespace}
+
+			mockProvider.triggerProvisionFunc = func(ctx context.Context, resource client.Object) (*provisioning.ProvisionResult, error) {
+				return &provisioning.ProvisionResult{
+					JobID:        "job-456",
+					InitialState: osacv1alpha1.JobStatePending,
+					Message:      "Job triggered",
+				}, nil
+			}
+
+			// Reconcile twice
+			_, err := reconciler.Reconcile(ctx, ctrl.Request{NamespacedName: key})
+			Expect(err).NotTo(HaveOccurred())
+			_, err = reconciler.Reconcile(ctx, ctrl.Request{NamespacedName: key})
+			Expect(err).NotTo(HaveOccurred())
+
+			// Fetch updated SecurityGroup
+			updated := &osacv1alpha1.SecurityGroup{}
+			Expect(fakeClient.Get(ctx, key, updated)).To(Succeed())
+
+			// Verify annotation still matches (no duplicate Update calls)
+			Expect(updated.Annotations[osacImplementationStrategyAnnotation]).To(Equal("cudn-net"))
+		})
+
+		It("should update annotation when it differs from parent VirtualNetwork", func() {
+			// Create SecurityGroup with different annotation value
+			sgDifferentAnnotation := &osacv1alpha1.SecurityGroup{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "sg-different-annotation",
+					Namespace: "test-namespace",
+					Annotations: map[string]string{
+						osacImplementationStrategyAnnotation: "old-strategy",
+					},
+				},
+				Spec: osacv1alpha1.SecurityGroupSpec{
+					VirtualNetwork: "test-vnet-uuid",
+				},
+			}
+			Expect(fakeClient.Create(ctx, sgDifferentAnnotation)).To(Succeed())
+
+			key := types.NamespacedName{Name: sgDifferentAnnotation.Name, Namespace: sgDifferentAnnotation.Namespace}
+
+			mockProvider.triggerProvisionFunc = func(ctx context.Context, resource client.Object) (*provisioning.ProvisionResult, error) {
+				return &provisioning.ProvisionResult{
+					JobID:        "job-789",
+					InitialState: osacv1alpha1.JobStatePending,
+					Message:      "Job triggered",
+				}, nil
+			}
+
+			// Reconcile twice
+			_, err := reconciler.Reconcile(ctx, ctrl.Request{NamespacedName: key})
+			Expect(err).NotTo(HaveOccurred())
+			_, err = reconciler.Reconcile(ctx, ctrl.Request{NamespacedName: key})
+			Expect(err).NotTo(HaveOccurred())
+
+			// Fetch updated SecurityGroup
+			updated := &osacv1alpha1.SecurityGroup{}
+			Expect(fakeClient.Get(ctx, key, updated)).To(Succeed())
+
+			// Verify annotation was updated to match parent VirtualNetwork
+			Expect(updated.Annotations[osacImplementationStrategyAnnotation]).To(Equal("cudn-net"))
+		})
+
 		It("should requeue if parent VirtualNetwork has no ImplementationStrategy", func() {
 			// Create VirtualNetwork without ImplementationStrategy
 			vnetNoStrategy := &osacv1alpha1.VirtualNetwork{
