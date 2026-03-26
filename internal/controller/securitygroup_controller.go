@@ -128,6 +128,22 @@ func (r *SecurityGroupReconciler) handleUpdate(ctx context.Context, sg *v1alpha1
 		return ctrl.Result{RequeueAfter: 10 * time.Second}, nil
 	}
 
+	// Add implementation-strategy annotation if not present or different
+	// This allows AAP playbooks to select the appropriate role without doing lookups
+	if sg.Annotations == nil {
+		sg.Annotations = make(map[string]string)
+	}
+	if sg.Annotations[osacImplementationStrategyAnnotation] != implementationStrategy {
+		sg.Annotations[osacImplementationStrategyAnnotation] = implementationStrategy
+		log.Info("setting implementation-strategy annotation", "strategy", implementationStrategy)
+		// Preserve the status we've set since Update returns server state (empty status)
+		currentStatus := sg.Status.DeepCopy()
+		if err := r.Update(ctx, sg); err != nil {
+			return ctrl.Result{}, err
+		}
+		sg.Status = *currentStatus
+	}
+
 	// Handle provisioning
 	return r.handleProvisioning(ctx, sg, implementationStrategy)
 }
