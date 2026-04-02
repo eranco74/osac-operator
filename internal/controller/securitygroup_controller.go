@@ -40,6 +40,7 @@ const (
 // SecurityGroupReconciler reconciles a SecurityGroup object
 type SecurityGroupReconciler struct {
 	client.Client
+	APIReader            client.Reader
 	Scheme               *runtime.Scheme
 	NetworkingNamespace  string
 	ProvisioningProvider provisioning.ProvisioningProvider
@@ -143,12 +144,22 @@ func (r *SecurityGroupReconciler) handleUpdate(ctx context.Context, sg *v1alpha1
 		}
 	}
 
-	// Compute desired config version from spec
-	desiredVersion, err := provisioning.ComputeDesiredConfigVersion(sg.Spec)
+	// Compute desired config version from spec and inherited implementation strategy
+	desiredVersion, err := provisioning.ComputeDesiredConfigVersion(struct {
+		Spec                   v1alpha1.SecurityGroupSpec
+		ImplementationStrategy string
+	}{sg.Spec, implementationStrategy})
 	if err != nil {
 		return ctrl.Result{}, fmt.Errorf("failed to compute desired config version: %w", err)
 	}
 	sg.Status.DesiredConfigVersion = desiredVersion
+
+	// Set phase to Progressing only on first provision (empty phase) or when spec changed
+	// after a previous success. Don't override Failed during backoff.
+	if sg.Status.Phase == "" || (sg.Status.Phase == v1alpha1.SecurityGroupPhaseReady &&
+		!provisioning.IsConfigApplied(&sg.Status.Jobs, sg.Status.DesiredConfigVersion)) {
+		sg.Status.Phase = v1alpha1.SecurityGroupPhaseProgressing
+	}
 
 	// Handle provisioning
 	return r.handleProvisioning(ctx, sg)
@@ -196,7 +207,7 @@ func (r *SecurityGroupReconciler) handleProvisioning(ctx context.Context, sg *v1
 			OnSuccess: func(_ provisioning.ProvisionStatus) { sg.Status.Phase = v1alpha1.SecurityGroupPhaseReady },
 		},
 		func() bool {
-			return provisioning.CheckAPIServerForNonTerminalProvisionJob(ctx, r.Client, client.ObjectKeyFromObject(sg), &v1alpha1.SecurityGroup{})
+			return provisioning.CheckAPIServerForNonTerminalProvisionJob(ctx, r.APIReader, client.ObjectKeyFromObject(sg), &v1alpha1.SecurityGroup{})
 		},
 	)
 }

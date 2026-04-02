@@ -47,6 +47,7 @@ const (
 // SubnetReconciler reconciles a Subnet object
 type SubnetReconciler struct {
 	client.Client
+	APIReader            client.Reader
 	Scheme               *runtime.Scheme
 	NetworkingNamespace  string
 	ProvisioningProvider provisioning.ProvisioningProvider
@@ -161,12 +162,22 @@ func (r *SubnetReconciler) handleUpdate(ctx context.Context, subnet *v1alpha1.Su
 		subnet.Status = *currentStatus
 	}
 
-	// Compute desired config version from spec
-	desiredVersion, err := provisioning.ComputeDesiredConfigVersion(subnet.Spec)
+	// Compute desired config version from spec and inherited implementation strategy
+	desiredVersion, err := provisioning.ComputeDesiredConfigVersion(struct {
+		Spec                   v1alpha1.SubnetSpec
+		ImplementationStrategy string
+	}{subnet.Spec, implementationStrategy})
 	if err != nil {
 		return ctrl.Result{}, fmt.Errorf("failed to compute desired config version: %w", err)
 	}
 	subnet.Status.DesiredConfigVersion = desiredVersion
+
+	// Set phase to Progressing only on first provision (empty phase) or when spec changed
+	// after a previous success. Don't override Failed during backoff.
+	if subnet.Status.Phase == "" || (subnet.Status.Phase == v1alpha1.SubnetPhaseReady &&
+		!provisioning.IsConfigApplied(&subnet.Status.Jobs, subnet.Status.DesiredConfigVersion)) {
+		subnet.Status.Phase = v1alpha1.SubnetPhaseProgressing
+	}
 
 	// Handle provisioning
 	return r.handleProvisioning(ctx, subnet)
@@ -220,7 +231,7 @@ func (r *SubnetReconciler) handleProvisioning(ctx context.Context, subnet *v1alp
 			OnSuccess: func(_ provisioning.ProvisionStatus) { subnet.Status.Phase = v1alpha1.SubnetPhaseReady },
 		},
 		func() bool {
-			return provisioning.CheckAPIServerForNonTerminalProvisionJob(ctx, r.Client, client.ObjectKeyFromObject(subnet), &v1alpha1.Subnet{})
+			return provisioning.CheckAPIServerForNonTerminalProvisionJob(ctx, r.APIReader, client.ObjectKeyFromObject(subnet), &v1alpha1.Subnet{})
 		},
 	)
 }

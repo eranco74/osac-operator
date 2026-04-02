@@ -43,6 +43,7 @@ const (
 // VirtualNetworkReconciler reconciles a VirtualNetwork object
 type VirtualNetworkReconciler struct {
 	client.Client
+	APIReader            client.Reader
 	Scheme               *runtime.Scheme
 	NetworkingNamespace  string
 	ProvisioningProvider provisioning.ProvisioningProvider
@@ -135,6 +136,13 @@ func (r *VirtualNetworkReconciler) handleUpdate(ctx context.Context, vnet *v1alp
 	}
 	vnet.Status.DesiredConfigVersion = desiredVersion
 
+	// Set phase to Progressing only on first provision (empty phase) or when spec changed
+	// after a previous success. Don't override Failed during backoff.
+	if vnet.Status.Phase == "" || (vnet.Status.Phase == v1alpha1.VirtualNetworkPhaseReady &&
+		!provisioning.IsConfigApplied(&vnet.Status.Jobs, vnet.Status.DesiredConfigVersion)) {
+		vnet.Status.Phase = v1alpha1.VirtualNetworkPhaseProgressing
+	}
+
 	// Handle provisioning
 	return r.handleProvisioning(ctx, vnet)
 }
@@ -155,7 +163,7 @@ func (r *VirtualNetworkReconciler) handleProvisioning(ctx context.Context, vnet 
 			OnSuccess: func(_ provisioning.ProvisionStatus) { vnet.Status.Phase = v1alpha1.VirtualNetworkPhaseReady },
 		},
 		func() bool {
-			return provisioning.CheckAPIServerForNonTerminalProvisionJob(ctx, r.Client, client.ObjectKeyFromObject(vnet), &v1alpha1.VirtualNetwork{})
+			return provisioning.CheckAPIServerForNonTerminalProvisionJob(ctx, r.APIReader, client.ObjectKeyFromObject(vnet), &v1alpha1.VirtualNetwork{})
 		},
 	)
 }

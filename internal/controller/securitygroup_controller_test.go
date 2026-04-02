@@ -109,6 +109,7 @@ var _ = Describe("SecurityGroupReconciler", func() {
 		// Create reconciler
 		reconciler = &SecurityGroupReconciler{
 			Client:               fakeClient,
+			APIReader:            fakeClient,
 			Scheme:               testScheme,
 			NetworkingNamespace:  "test-namespace",
 			ProvisioningProvider: mockProvider,

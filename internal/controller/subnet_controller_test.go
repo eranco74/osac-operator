@@ -45,6 +45,7 @@ var _ = Describe("SubnetReconciler", func() {
 		mockProvider = &mockSubnetProvider{}
 		reconciler = &SubnetReconciler{
 			Client:               k8sClient,
+			APIReader:            k8sClient,
 			Scheme:               k8sClient.Scheme(),
 			NetworkingNamespace:  "default",
 			ProvisioningProvider: mockProvider,
