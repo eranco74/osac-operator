@@ -91,6 +91,7 @@ const (
 	envAAPDeprovisionTemplate = "OSAC_AAP_DEPROVISION_TEMPLATE"
 	envAAPStatusPollInterval  = "OSAC_AAP_STATUS_POLL_INTERVAL"
 	envAAPInsecureSkipVerify  = "OSAC_AAP_INSECURE_SKIP_VERIFY"
+	envAAPTemplatePrefix      = "OSAC_AAP_TEMPLATE_PREFIX"
 
 	// Cluster (ClusterOrder) AAP template overrides
 	envClusterAAPProvisionTemplate   = "OSAC_CLUSTER_AAP_PROVISION_TEMPLATE"
@@ -230,7 +231,7 @@ func createEDAProvider(
 
 // createAAPProvider creates and validates AAP direct provider configuration.
 func createAAPProvider(
-	aapURL, aapToken, provisionTemplate, deprovisionTemplate string,
+	aapURL, aapToken, provisionTemplate, deprovisionTemplate, templatePrefix string,
 	aapInsecureSkipVerify bool,
 ) (provisioning.ProvisioningProvider, time.Duration, error) {
 	statusPollInterval := helpers.GetEnvWithDefault(envAAPStatusPollInterval, provisioning.DefaultStatusPollInterval)
@@ -241,6 +242,7 @@ func createAAPProvider(
 		AAPClient:           aapClient,
 		ProvisionTemplate:   provisionTemplate,
 		DeprovisionTemplate: deprovisionTemplate,
+		TemplatePrefix:      templatePrefix,
 	}
 
 	provider, err := provisioning.NewProvider(config)
@@ -248,10 +250,11 @@ func createAAPProvider(
 		return nil, 0, err
 	}
 
-	setupLog.Info("using AAP direct provider for ComputeInstance",
+	setupLog.Info("using AAP direct provider",
 		"url", aapURL,
 		"provisionTemplate", provisionTemplate,
 		"deprovisionTemplate", deprovisionTemplate,
+		"templatePrefix", templatePrefix,
 		"statusPollInterval", statusPollInterval,
 		"insecureSkipVerify", aapInsecureSkipVerify)
 
@@ -262,7 +265,7 @@ func createAAPProvider(
 func createProvider(
 	providerType provisioning.ProviderType,
 	provisionWebhook, deprovisionWebhook string,
-	aapURL, aapToken, provisionTemplate, deprovisionTemplate string,
+	aapURL, aapToken, provisionTemplate, deprovisionTemplate, templatePrefix string,
 	aapInsecureSkipVerify bool,
 	minimumRequestInterval time.Duration,
 ) (provisioning.ProvisioningProvider, time.Duration, error) {
@@ -271,7 +274,10 @@ func createProvider(
 		return createEDAProvider(provisionWebhook, deprovisionWebhook, minimumRequestInterval)
 
 	case provisioning.ProviderTypeAAP:
-		return createAAPProvider(aapURL, aapToken, provisionTemplate, deprovisionTemplate, aapInsecureSkipVerify)
+		return createAAPProvider(
+			aapURL, aapToken, provisionTemplate, deprovisionTemplate,
+			templatePrefix, aapInsecureSkipVerify,
+		)
 
 	default:
 		return nil, 0, fmt.Errorf("unknown provider type: %s", providerType)
@@ -296,11 +302,12 @@ func createProviderFromEnv(
 	aapToken := os.Getenv(envAAPToken)
 	provisionTemplate := helpers.GetEnvWithDefault(templateOverrideProvisionEnv, os.Getenv(envAAPProvisionTemplate))
 	deprovisionTemplate := helpers.GetEnvWithDefault(templateOverrideDeprovisionEnv, os.Getenv(envAAPDeprovisionTemplate))
+	templatePrefix := helpers.GetEnvWithDefault(envAAPTemplatePrefix, "osac")
 	aapInsecureSkipVerify := helpers.GetEnvWithDefault(envAAPInsecureSkipVerify, false)
 	return createProvider(
 		providerType,
 		provisionWebhook, deprovisionWebhook,
-		aapURL, aapToken, provisionTemplate, deprovisionTemplate,
+		aapURL, aapToken, provisionTemplate, deprovisionTemplate, templatePrefix,
 		aapInsecureSkipVerify,
 		minimumRequestInterval,
 	)
@@ -443,7 +450,7 @@ func setupNetworkingControllers(
 	// Create a single prefix-based AAP provider shared by all networking controllers.
 	// Template names are derived from the resource Kind at call time:
 	//   {prefix}-create-{kind-kebab} / {prefix}-delete-{kind-kebab}
-	templatePrefix := helpers.GetEnvWithDefault("OSAC_AAP_TEMPLATE_PREFIX", "osac")
+	templatePrefix := helpers.GetEnvWithDefault(envAAPTemplatePrefix, "osac")
 	aapClient := aap.NewClient(aapURL, aapToken, aapInsecureSkipVerify)
 	networkingProvider := provisioning.NewAAPProviderWithPrefix(aapClient, templatePrefix)
 
